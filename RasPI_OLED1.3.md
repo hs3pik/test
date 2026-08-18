@@ -102,6 +102,10 @@ sudo apt update && sudo apt install -y python3-pip
 sudo apt install -y portaudio19-dev python3-dev build-essential i2c-tools pinctrl
 ```
 
+```bash
+sudo apt update && sudo apt install -y portaudio19-dev python3-dev build-essential i2c-tools
+```
+
 **2. ติดตั้งไลบรารี Python ทั้งหมดที่ระบบต้องการ:**
 ```bash
 pip3 install pymumble smbus2 pyaudio RPi.GPIO rpi_lcd numpy flask --break-system-packages
