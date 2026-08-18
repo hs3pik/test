@@ -36,7 +36,10 @@ sudo raspi-config
 * ยังไม่ต้องรีบูต ให้ไปทำข้อ 3 ต่อ
 
 **3. เปิดใช้งาน I2C สำหรับหน้าจอ LCD**
-* ในหน้าจอ `raspi-config` ไปที่ `Interface Options` -> เลือก `I2C` -> กด `Yes`
+```bash
+sudo raspi-config
+```
+* ไปที่ `Interface Options` -> เลือก `I2C` -> กด `Yes`
 * เลือก `Finish` และรีบูตเครื่องด้วยคำสั่ง: 
 ```bash
 sudo reboot
