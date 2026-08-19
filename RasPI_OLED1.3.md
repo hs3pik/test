@@ -100,47 +100,13 @@ sudo reboot
 
 ```bash
 sudo apt update
-```
-
-```bash
-sudo apt install -y python3-pip
+sudo apt install -y python3-pip python3-dev build-essential i2c-tools portaudio19-dev libasound2-dev libopenjp2-7 libtiff6 libopenblas0
 ```
 
 **2. ติดตั้งไลบรารี Python ทั้งหมดที่ระบบต้องการ:**
 
 ```bash
-sudo apt install -y portaudio19-dev python3-dev build-essential i2c-tools pinctrl
-```
-
-
-```bash
-sudo apt install -y python3-dev portaudio19-dev libasound2-dev
-```
-
-```bash
-pip3 install pymumble smbus2 pyaudio RPi.GPIO rpi_lcd numpy flask --break-system-packages
-```
-```bash
-pip3 install luma.oled --break-system-packages
-```
-```bash
-sudo apt install libopenjp2-7 libtiff6 -y
-```
-
-```bash
-pip3 install luma.oled pillow --break-system-packages
-```
-
-```bash
-pip3 uninstall RPi.GPIO --break-system-packages -y
-```
-
-```bash
-pip3 install rpi-lgpio --break-system-packages
-```
-
-```bash
-sudo apt update && sudo apt install libopenblas0 portaudio19-dev libopenjp2-7 libtiff6 -y
+sudo pip3 install pymumble smbus2 pyaudio numpy flask luma.oled pillow rpi-lgpio --break-system-packages
 ```
 
 
@@ -797,6 +763,11 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable tot-watchdog.service
 sudo systemctl start tot-watchdog.service
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart mumble-gateway.service
 ```
 
 ```bash
