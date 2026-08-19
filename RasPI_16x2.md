@@ -87,13 +87,13 @@ sudo reboot
 
 **1. ติดตั้งเครื่องมือพื้นฐานและไลบรารีระบบ (ต้องทำก่อนเสมอ)**
 ```bash
-sudo apt update && sudo apt install -y python3-pip
-sudo apt install -y portaudio19-dev python3-dev build-essential i2c-tools libopenblas-dev
+sudo apt update
+sudo apt install -y python3-pip python3-dev build-essential i2c-tools portaudio19-dev libasound2-dev libopenjp2-7 libtiff6 libopenblas0
 ```
 
 **2. ติดตั้งไลบรารี Python ทั้งหมดที่ระบบต้องการ:**
 ```bash
-sudo pip3 install pymumble smbus2 pyaudio RPi.GPIO rpi_lcd numpy flask --break-system-packages
+sudo pip3 install pymumble smbus2 pyaudio numpy flask rpi_lcd rpi-lgpio --break-system-packages
 ```
 ## บทที่ 5: การรันระบบ Gateway หลัก (พร้อมระบบ WebUI)
 
@@ -109,6 +109,7 @@ nano /home/[USERNAME]/gateway.py
 คัดลอกโค้ดด้านล่างไปวาง (🔴 ห้ามลืมเปลี่ยนค่าในส่วน CONFIGURATION ให้ตรงกับระบบของคุณ):
 
 ```python
+
 import time
 import threading
 import RPi.GPIO as GPIO
@@ -120,6 +121,8 @@ import socket
 import sys
 import subprocess
 import ssl
+from rpi_lcd import LCD
+from pymumble_py3 import Mumble
 
 # ปิด Log ของ Flask ไม่ให้รก Terminal
 log = logging.getLogger('werkzeug')
@@ -136,67 +139,78 @@ if not hasattr(ssl, 'wrap_socket'):
             context.load_cert_chain(certfile, keyfile)
         return context.wrap_socket(sock, server_side=server_side, do_handshake_on_connect=do_handshake_on_connect, suppress_ragged_eofs=suppress_ragged_eofs)
     ssl.wrap_socket = _wrap_socket
-
 # =======================================================
-from pymumble_py3 import Mumble
-from rpi_lcd import LCD
 
 # ==================== 🔴 CONFIGURATION ====================
-SERVER_IP = "192.168.10.20"     # 🔴 [ต้องใส่] IP หรือ Domain ของ Mumble Server
-PORT = 64738                    # 🔴 [ต้องใส่] พอร์ตของเซิร์ฟเวอร์
-PASSWORD = "your_password"      # 🔴 [ต้องใส่] รหัสผ่านเข้าเซิร์ฟเวอร์
-USERNAME = "Mumble-Gateway"     # 🔴 [ต้องใส่] ชื่อที่จะแสดงในแอป Mumble
+SERVER_IP = "192.168.10.20"                 # 🔴 [ต้องใส่] IP หรือ Domain ของ Mumble Server
+PORT = 64738                                # 🔴 [ต้องใส่] พอร์ตของเซิร์ฟเวอร์
+PASSWORD = "your_password"                  # 🔴 [ต้องใส่] รหัสผ่านเข้าเซิร์ฟเวอร์
+USERNAME = "Mumble-Gateway"                 # 🔴 [ต้องใส่] ชื่อที่จะแสดงในแอป Mumble
 
-# --- 🔴 รายชื่อห้องที่จะให้ระบบทำงาน (ห้ามลืมแก้ไขส่วนนี้เด็ดขาด!) ---
-ROOMS = ["CH1", "CH2", "CH3", "CH4"]  # 🔴 [ต้องแก้] เปลี่ยนชื่อ CH1, CH2... เป็นชื่อห้องของคุณ
+LCD_ADDRESS = 0x27                          # 🔴 Address ของจอ 16x2 (ส่วนใหญ่ 0x27 หรือ 0x3F)
 
-# การกำหนดห้องเริ่มต้นเมื่อเปิดเครื่อง
-current_room_idx = 0
+# --- 🔴 รายชื่อห้องที่จะให้ระบบทำงาน ---
+ROOMS = ["CH1", "CH2", "CH3", "CH4"]  # 🔴 [ต้องแก้] เปลี่ยนชื่อห้อง
+current_room_idx = 0  
 ROOM = ROOMS[current_room_idx]
 
 # --- ตั้งค่า Hardware ---
-GPIO_PTT = 26
-GPIO_BTN_UP = 17
-GPIO_BTN_DOWN = 27
+GPIO_PTT = 26  
+GPIO_BTN_UP = 17    
+GPIO_BTN_DOWN = 27  
 
-VOX_THRESHOLD = 400
-VOX_HANG_TIME = 0.8
-TX_HANG_TIME = 0.7
+VOX_THRESHOLD = 400    
+VOX_HANG_TIME = 0.8    
+TX_HANG_TIME = 0.7     
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 48000
-CHUNK = 960
-
+CHUNK = 960  
 # =======================================================
-lcd = LCD()
+
+# --- Safe LCD 16x2 Initialization ---
+lcd = None
+lcd_enabled = False
 lcd_lock = threading.Lock()
+
+try:
+    lcd = LCD(address=LCD_ADDRESS, bus=1)
+    lcd_enabled = True
+    print(f"✅ LCD 16x2 Connected at Address 0x{LCD_ADDRESS:02X}")
+except Exception as e:
+    print(f"⚠️ Warning: Could not initialize LCD at 0x{LCD_ADDRESS:02X} ({e})")
+    print("⚠️ Program will continue running WITHOUT LCD display.")
 
 # ตั้งค่า GPIO
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(GPIO_PTT, GPIO.OUT)
-GPIO.output(GPIO_PTT, GPIO.LOW)
+GPIO.setup(GPIO_PTT, GPIO.OUT, initial=GPIO.LOW)
 GPIO.setup(GPIO_BTN_UP, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(GPIO_BTN_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-btn_up_last_state = GPIO.HIGH
-btn_down_last_state = GPIO.HIGH
-
 def update_display(line1, line2):
+    if not lcd_enabled or lcd is None:
+        return
     with lcd_lock:
-        lcd.text(line1, 1)
-        lcd.text(line2, 2)
+        try:
+            # ljust(16)[:16] เติมช่องว่างให้เต็มบรรทัดเพื่อลบตัวอักษรเก่าที่อาจค้างอยู่
+            lcd.text(str(line1).ljust(16)[:16], 1)
+            lcd.text(str(line2).ljust(16)[:16], 2)
+        except Exception as e:
+            print(f"⚠️ LCD Write Warning: {e}")
 
+# ==================== BUTTON CALLBACKS ====================
 def change_room(direction, source="Button"):
     global current_room_idx, ROOM, mumble
+    
     if direction == "UP":
         current_room_idx = (current_room_idx + 1) % len(ROOMS)
     elif direction == "DOWN":
         current_room_idx = (current_room_idx - 1) % len(ROOMS)
-
+        
     ROOM = ROOMS[current_room_idx]
-
+    
     if 'mumble' in globals() and mumble.is_alive():
         target_channel = mumble.channels.find_by_name(ROOM)
         if target_channel:
@@ -205,6 +219,13 @@ def change_room(direction, source="Button"):
             update_display(f"Room: {ROOM}", msg)
             print(f"🔄 Switched to room: {ROOM} (By {source})")
 
+def btn_up_callback(channel): change_room("UP")
+def btn_down_callback(channel): change_room("DOWN")
+
+GPIO.add_event_detect(GPIO_BTN_UP, GPIO.FALLING, callback=btn_up_callback, bouncetime=500)
+GPIO.add_event_detect(GPIO_BTN_DOWN, GPIO.FALLING, callback=btn_down_callback, bouncetime=500)
+
+# ==================== SYSTEM CHECKS ====================
 p = None
 stream_out = None
 stream_in = None
@@ -212,37 +233,33 @@ stream_in = None
 def check_audio_device():
     global p, stream_out, stream_in
     update_display("System Check", "1. Audio (USB)")
-    time.sleep(2)
+    time.sleep(2) 
+    
     while True:
         p = pyaudio.PyAudio()
         usb_idx = None
         for i in range(p.get_device_count()):
             dev_info = p.get_device_info_by_index(i)
-            if "USB" in dev_info['name'] or "C-Media" in dev_info['name'] or "USB PnP" in dev_info['name']:
+            if "USB" in dev_info['name'] or "C-Media" in dev_info['name']:
                 usb_idx = i
                 break
+                
         if usb_idx is not None:
             update_display("Audio Status", "USB Card OK!")
-            time.sleep(2)
+            time.sleep(2) 
             break
         else:
-            p.terminate()
+            p.terminate() 
             update_display("Error: Audio", "No USB Card")
             time.sleep(2)
-
+            
     stream_out = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True, output_device_index=usb_idx)
     stream_in = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK, input_device_index=usb_idx)
 
 def get_network_info():
     try:
         route_output = subprocess.check_output(f"ip route get {SERVER_IP}", shell=True).decode()
-        if "wlan" in route_output:
-            net_type = "WiFi"
-        elif "eth" in route_output:
-            net_type = "LAN"
-        else:
-            net_type = "Net"
-
+        net_type = "WiFi" if "wlan" in route_output else "LAN" if "eth" in route_output else "Net"
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect((SERVER_IP, PORT))
         ip = s.getsockname()[0]
@@ -253,55 +270,64 @@ def get_network_info():
 
 def wait_for_network():
     update_display("System Check", "2. Network")
-    time.sleep(2)
+    time.sleep(2) 
+    
     while True:
         try:
             s = socket.create_connection((SERVER_IP, PORT), timeout=3)
             s.close()
             net_type, ip_address = get_network_info()
             update_display(f"Net: {net_type}", f"{ip_address}")
-            time.sleep(5)
-            break
+            time.sleep(5) 
+            break 
         except OSError:
             update_display("Network Error", "Waiting IP...")
             time.sleep(2)
 
+# ==================== VARIABLES ====================
 last_audio_time = 0
 is_transmitting = False
-is_vox_active = False
-last_idle_text = ""
+is_vox_active = False  
+last_idle_text = ""    
 user_speaking_status = {}
 
+# ==================== FUNCTIONS ====================
 def sound_received_handler(user, soundchunk):
     global last_audio_time
     last_audio_time = time.time()
     if user and 'name' in user:
         user_speaking_status[user['name']] = time.time()
     try:
-        stream_out.write(soundchunk.pcm)
-    except:
+        if stream_out and stream_out.is_active():
+            stream_out.write(soundchunk.pcm)
+    except Exception:
         pass
 
 def vox_monitor_thread(mumble_instance):
     global is_vox_active, is_transmitting
     last_vox_trigger_time = 0
+
     while True:
         try:
-            data = stream_in.read(CHUNK, exception_on_overflow=False)
-            if is_transmitting:
-                continue
-            audio_data = np.frombuffer(data, dtype=np.int16)
-            rms = np.sqrt(np.mean(np.square(audio_data.astype(np.float32))))
-            if rms > VOX_THRESHOLD:
-                last_vox_trigger_time = time.time()
-                is_vox_active = True
-                mumble_instance.sound_output.add_sound(data)
-            else:
-                if time.time() - last_vox_trigger_time > VOX_HANG_TIME:
-                    is_vox_active = False
-        except:
+            if stream_in and stream_in.is_active():
+                data = stream_in.read(CHUNK, exception_on_overflow=False)
+                if is_transmitting:
+                    continue
+
+                audio_data = np.frombuffer(data, dtype=np.int16)
+                rms = np.sqrt(np.mean(np.square(audio_data.astype(np.float32))))
+
+                if rms > VOX_THRESHOLD:
+                    last_vox_trigger_time = time.time()
+                    is_vox_active = True
+                    mumble_instance.sound_output.add_sound(data)
+                else:
+                    if time.time() - last_vox_trigger_time > VOX_HANG_TIME:
+                        is_vox_active = False
+        except Exception:
             time.sleep(0.01)
 
+# ==================== WEB UI (FLASK) ====================
 app = Flask(__name__)
 
 HTML_TEMPLATE = """
@@ -312,13 +338,23 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mumble Gateway Monitor</title>
     <style>
-        :root { --bg-dark: #0f151c; --bg-panel: #1a2332; --bg-inner: #111827; --text-main: #e2e8f0; --text-cyan: #00e5ff; --border-color: #2d3748; --color-ready: #22c55e; --color-tx: #ef4444; --color-rx: #3b82f6; }
+        :root {
+            --bg-dark: #0f151c; --bg-panel: #1a2332; --bg-inner: #111827;
+            --text-main: #e2e8f0; --text-cyan: #00e5ff; --border-color: #2d3748;
+            --color-ready: #22c55e; --color-tx: #ef4444; --color-rx: #3b82f6;
+        }
         body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg-dark); color: var(--text-main); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         .container { background-color: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px 30px; width: 100%; max-width: 1000px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
         .header { text-align: center; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 25px; position: relative; }
         .header h1 { color: var(--text-cyan); margin: 0; font-size: 1.8rem; text-shadow: 0 0 10px rgba(0, 229, 255, 0.2); }
-        .btn-restart { position: absolute; right: 0; top: 0; background-color: transparent; border: 1px solid #ef4444; color: #ef4444; padding: 5px 15px; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+        
+        .btn-restart {
+            position: absolute; right: 0; top: 0;
+            background-color: transparent; border: 1px solid #ef4444; color: #ef4444;
+            padding: 5px 15px; border-radius: 8px; cursor: pointer; transition: 0.3s;
+        }
         .btn-restart:hover { background-color: rgba(239, 68, 68, 0.2); }
+
         .grid-layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
         .sidebar { background-color: var(--bg-inner); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; display: flex; flex-direction: column; max-height: 400px; }
         .section-title { color: var(--text-cyan); font-size: 1rem; margin-top: 0; margin-bottom: 15px; }
@@ -342,7 +378,11 @@ HTML_TEMPLATE = """
         .stat-title { font-size: 0.75rem; color: #94a3b8; }
         .stat-value { font-size: 1rem; color: var(--text-cyan); font-weight: bold; }
         .footer { text-align: right; margin-top: 20px; font-size: 0.75rem; color: #64748b; }
-        @media (max-width: 768px) { .grid-layout { grid-template-columns: 1fr; } .btn-restart { position: static; display: block; width: 100%; margin-top: 15px; } }
+        
+        @media (max-width: 768px) { 
+            .grid-layout { grid-template-columns: 1fr; } 
+            .btn-restart { position: static; display: block; width: 100%; margin-top: 15px; }
+        }
     </style>
 </head>
 <body>
@@ -404,13 +444,13 @@ HTML_TEMPLATE = """
         }
 
         async function restartGateway() {
-            if(confirm("🚨 ยืนยันการรีสตาร์ท Gateway?")) {
+            if(confirm("🚨 ยืนยันการรีสตาร์ท Gateway? (ระบบจะตัดการเชื่อมต่อชั่วคราว)")) {
                 try {
                     await fetch('/api/restart', { method: 'POST' });
                     document.getElementById('status-badge').innerText = "RESTARTING...";
                     document.getElementById('status-badge').className = "status-badge bg-tx";
                     setTimeout(() => location.reload(), 15000); 
-                } catch(e) {}
+                } catch(e) { console.error(e); }
             }
         }
 
@@ -454,7 +494,7 @@ def api_status():
                     name = u['name']
                     is_speaking = (time.time() - user_speaking_status.get(name, 0)) < 0.5
                     users.append({"name": name, "is_speaking": is_speaking})
-
+    
     return jsonify({ "state_text": state_text, "state_color": state_color, "room": ROOM, "users": sorted(users, key=lambda x: x['name']) })
 
 def run_web_server():
@@ -469,29 +509,18 @@ try:
     mumble.start()
     mumble.is_ready()
     mumble.set_receive_sound(True)
-
+    
     target_channel = mumble.channels.find_by_name(ROOM)
-    if target_channel:
-        target_channel.move_in()
+    if target_channel: target_channel.move_in()
         
     mumble.callbacks.set_callback("sound_received", sound_received_handler)
     threading.Thread(target=vox_monitor_thread, args=(mumble,), daemon=True).start()
     threading.Thread(target=run_web_server, daemon=True).start()
-
+    
     _, current_ip = get_network_info()
     print(f"🌐 Web Monitor running at http://{current_ip}:8080")
 
     while True: 
-        current_up_state = GPIO.input(GPIO_BTN_UP)
-        if current_up_state == GPIO.LOW and btn_up_last_state == GPIO.HIGH:
-            change_room("UP")
-        btn_up_last_state = current_up_state
-
-        current_down_state = GPIO.input(GPIO_BTN_DOWN)
-        if current_down_state == GPIO.LOW and btn_down_last_state == GPIO.HIGH:
-            change_room("DOWN")
-        btn_down_last_state = current_down_state
-
         current_time = time.time()
         
         if 'mumble' in globals() and not mumble.is_alive():
@@ -538,21 +567,24 @@ try:
 except KeyboardInterrupt:
     print("\nStopping program...")
 finally:
-    if 'mumble' in globals() and mumble.is_alive():
-        mumble.stop()
+    if 'mumble' in globals() and mumble.is_alive(): mumble.stop()
     GPIO.output(GPIO_PTT, GPIO.LOW)
     GPIO.cleanup()
-    if stream_in:
-        stream_in.stop_stream()
-        stream_in.close()
-    if stream_out:
-        stream_out.stop_stream()
-        stream_out.close()
-    if p:
-        p.terminate()
-    with lcd_lock:
-        lcd.clear()
+    if stream_in: 
+        try: stream_in.stop_stream(); stream_in.close()
+        except: pass
+    if stream_out: 
+        try: stream_out.stop_stream(); stream_out.close()
+        except: pass
+    if p: 
+        try: p.terminate()
+        except: pass
+    if lcd_enabled and lcd:
+        with lcd_lock: 
+            try: lcd.clear()
+            except: pass
     print("System Cleaned and Exited.")
+
 ```
 
 **วิธีเข้าหน้า WebUI:** ให้เปิดเบราว์เซอร์ในมือถือหรือคอมพิวเตอร์ที่ต่อเน็ต/Wi-Fi วงเดียวกัน แล้วพิมพ์ URL ว่า `http://[IP-ของ-Pi]:8080` (ดูเลข IP ได้ที่หน้าจอ LCD ของตัวเครื่องเลยครับ)
@@ -677,6 +709,10 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable tot-watchdog.service
 sudo systemctl start tot-watchdog.service
+```
+
+```bash
+sudo reboot
 ```
 
 ## บทที่ 8: เทคนิคขั้นสูงและการแก้ปัญหาหน้างาน (Troubleshooting)
