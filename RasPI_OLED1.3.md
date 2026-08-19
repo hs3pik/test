@@ -112,6 +112,7 @@ sudo apt install -y python3-pip
 sudo apt install -y portaudio19-dev python3-dev build-essential i2c-tools pinctrl
 ```
 
+
 ```bash
 sudo apt install -y python3-dev portaudio19-dev libasound2-dev
 ```
@@ -138,6 +139,9 @@ pip3 uninstall RPi.GPIO --break-system-packages -y
 pip3 install rpi-lgpio --break-system-packages
 ```
 
+```bash
+sudo apt update && sudo apt install libopenblas0 portaudio19-dev libopenjp2-7 libtiff6 -y
+```
 
 
 ## บทที่ 5: การรันระบบ Gateway หลัก (พร้อมระบบ WebUI)
@@ -793,6 +797,10 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable tot-watchdog.service
 sudo systemctl start tot-watchdog.service
+```
+
+```bash
+sudo reboot
 ```
 
 ## บทที่ 8: เทคนิคขั้นสูงและการแก้ปัญหาหน้างาน (Troubleshooting)
