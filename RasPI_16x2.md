@@ -103,7 +103,7 @@ sudo pip3 install pymumble smbus2 pyaudio numpy flask rpi_lcd rpi-lgpio --break-
 
 สร้างไฟล์โปรแกรมหลัก:
 ```bash
-nano /home/[USERNAME]/gateway.py
+nano ~/gateway.py
 ```
 
 คัดลอกโค้ดด้านล่างไปวาง (🔴 ห้ามลืมเปลี่ยนค่าในส่วน CONFIGURATION ให้ตรงกับระบบของคุณ):
