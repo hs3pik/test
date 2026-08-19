@@ -109,7 +109,6 @@ nano ~/gateway.py
 คัดลอกโค้ดด้านล่างไปวาง (🔴 ห้ามลืมเปลี่ยนค่าในส่วน CONFIGURATION ให้ตรงกับระบบของคุณ):
 
 ```python
-
 import time
 import threading
 import RPi.GPIO as GPIO
@@ -123,8 +122,10 @@ import subprocess
 import ssl
 import json
 import os
-from rpi_lcd import LCD
 from pymumble_py3 import Mumble
+
+# นำเข้าไลบรารีจอ LCD 16x2
+from rpi_lcd import LCD
 
 # ปิด Log ของ Flask ไม่ให้รก Terminal
 log = logging.getLogger('werkzeug')
@@ -195,14 +196,13 @@ for i in range(1, 7):
 if not ROOMS:
     ROOMS = ["Root"] 
 
-# ทำรหัสผ่านให้ไม่ซ้ำกัน (ลบกุญแจที่ซ้ำออก)
 ROOM_PASSWORDS = list(set(ROOM_PASSWORDS))
 
 VOX_THRESHOLD = float(cfg.get("VOX_THRESHOLD", 400))
 VOX_HANG_TIME = float(cfg.get("VOX_HANG_TIME", 0.8))
 TX_HANG_TIME = float(cfg.get("TX_HANG_TIME", 0.7))
 
-LCD_ADDRESS = 0x27  # Address ของจอ 16x2
+LCD_ADDRESS = 0x27  # 🔴 Address ของจอ 16x2
 
 current_room_idx = 0  
 ROOM = ROOMS[current_room_idx]
@@ -455,7 +455,8 @@ HTML_TEMPLATE = """
         .form-group label { display: block; margin-bottom: 5px; font-size: 0.85rem; color: #94a3b8; }
         .form-group input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-inner); color: white; box-sizing: border-box; }
         
-        .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px; }
+        .modal-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px; }
+        .modal-footer-right { display: flex; gap: 10px; }
         .btn-save { background: var(--color-ready); color: black; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold;}
         
         @media (max-width: 768px) { 
@@ -463,6 +464,9 @@ HTML_TEMPLATE = """
             .header { flex-direction: column; gap: 15px; }
             .form-grid { grid-template-columns: 1fr; }
             .form-group.full { grid-column: span 1; }
+            .modal-footer { flex-direction: column-reverse; gap: 15px; }
+            .modal-footer-right { width: 100%; justify-content: space-between; }
+            .btn-restart { width: 100%; }
         }
     </style>
 </head>
@@ -472,7 +476,6 @@ HTML_TEMPLATE = """
             <h1>📻 Gateway Radio</h1>
             <div class="btn-group">
                 <button class="btn-action" onclick="openConfig()">⚙️ Settings</button>
-                <button class="btn-action btn-restart" onclick="restartGateway()">🔄 Restart</button>
             </div>
         </div>
         <div class="grid-layout">
@@ -552,8 +555,11 @@ HTML_TEMPLATE = """
 
         </div>
         <div class="modal-footer">
-            <button class="btn-action" onclick="closeConfig()">Cancel</button>
-            <button class="btn-save" onclick="saveConfig()">Save & Restart</button>
+            <button class="btn-action btn-restart" onclick="restartGateway()">🔄 Restart System</button>
+            <div class="modal-footer-right">
+                <button class="btn-action" onclick="closeConfig()">Cancel</button>
+                <button class="btn-save" onclick="saveConfig()">Save & Restart</button>
+            </div>
         </div>
     </div>
 
@@ -581,6 +587,7 @@ HTML_TEMPLATE = """
 
         async function restartGateway() {
             if(confirm("🚨 ยืนยันการรีสตาร์ท Gateway?")) {
+                closeConfig();
                 document.getElementById('status-badge').innerText = "RESTARTING...";
                 document.getElementById('status-badge').className = "status-badge bg-tx";
                 fetch('/api/restart', { method: 'POST' });
@@ -819,6 +826,7 @@ finally:
             try: lcd.clear()
             except: pass
     print("System Cleaned and Exited.")
+
 
 ```
 
