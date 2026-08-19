@@ -629,7 +629,7 @@ sudo systemctl start mumble-gateway.service
 
 **1. สร้างไฟล์โค้ด Watchdog:**
 ```bash
-nano /home/[USERNAME]/tot_watchdog.py
+nano ~/tot_watchdog.py
 ```
 
 ใส่โค้ดนี้ลงไป:
