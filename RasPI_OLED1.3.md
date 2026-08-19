@@ -113,42 +113,32 @@ sudo apt install -y portaudio19-dev python3-dev build-essential i2c-tools pinctr
 ```
 
 ```bash
+sudo apt install -y python3-dev portaudio19-dev libasound2-dev
+```
+
+```bash
 pip3 install pymumble smbus2 pyaudio RPi.GPIO rpi_lcd numpy flask --break-system-packages
 ```
 ```bash
 pip3 install luma.oled --break-system-packages
 ```
-
+```bash
+sudo apt install libopenjp2-7 libtiff6 -y
+```
 
 ```bash
 pip3 install luma.oled pillow --break-system-packages
 ```
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+```bash
+pip3 uninstall RPi.GPIO --break-system-packages -y
+```
 
 ```bash
-sudo apt install -y python3-dev portaudio19-dev libasound2-dev
+pip3 install rpi-lgpio --break-system-packages
 ```
+
+
 
 ## บทที่ 5: การรันระบบ Gateway หลัก (พร้อมระบบ WebUI)
 
@@ -164,10 +154,10 @@ sudo apt install -y python3-dev portaudio19-dev libasound2-dev
 nano ~/gateway.py
 ```
 
+
 คัดลอกโค้ดด้านล่างไปวาง (🔴 ห้ามลืมเปลี่ยนค่าในส่วน CONFIGURATION ให้ตรงกับระบบของคุณ):
 
-```
-Python
+```Python
 import time
 import threading
 import RPi.GPIO as GPIO
@@ -258,8 +248,9 @@ except:
 # ตั้งค่า GPIO
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(GPIO_PTT, GPIO.OUT)
-GPIO.output(GPIO_PTT, GPIO.LOW)
+
+# [✅ แก้ไขแล้ว] ใส่ initial=GPIO.LOW เพื่อแก้บั๊ก Bookworm OS และลบ GPIO.output ซ้ำซ้อนออก
+GPIO.setup(GPIO_PTT, GPIO.OUT, initial=GPIO.LOW)
 
 # ตั้งค่าปุ่มกด พร้อมเปิดโหมด Internal Pull-Up
 GPIO.setup(GPIO_BTN_UP, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -672,7 +663,6 @@ finally:
             try: device.clear()
             except: pass
     print("System Cleaned and Exited.")
-
 ```
 
 **วิธีเข้าหน้า WebUI:**
