@@ -115,6 +115,36 @@ sudo apt install -y portaudio19-dev python3-dev build-essential i2c-tools pinctr
 ```bash
 pip3 install pymumble smbus2 pyaudio RPi.GPIO rpi_lcd numpy flask --break-system-packages
 ```
+```bash
+pip3 install luma.oled --break-system-packages
+```
+
+
+```bash
+pip3 install luma.oled pillow --break-system-packages
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ```bash
 sudo apt install -y python3-dev portaudio19-dev libasound2-dev
@@ -136,7 +166,8 @@ nano ~/gateway.py
 
 คัดลอกโค้ดด้านล่างไปวาง (🔴 ห้ามลืมเปลี่ยนค่าในส่วน CONFIGURATION ให้ตรงกับระบบของคุณ):
 
-```python
+```
+Python
 import time
 import threading
 import RPi.GPIO as GPIO
@@ -167,15 +198,20 @@ if not hasattr(ssl, 'wrap_socket'):
 # =======================================================
 
 from pymumble_py3 import Mumble
-from rpi_lcd import LCD
+from luma.core.interface.serial import i2c
+from luma.oled.device import sh1106, ssd1306
+from luma.core.render import canvas
+from PIL import ImageFont
 
 # ==================== 🔴 CONFIGURATION ====================
 SERVER_IP = "192.168.10.20"              # 🔴 [ต้องใส่] IP หรือ Domain ของ Mumble Server
-PORT = 64738                                      # 🔴 [ต้องใส่] พอร์ตของเซิร์ฟเวอร์
+PORT = 64738                              # 🔴 [ต้องใส่] พอร์ตของเซิร์ฟเวอร์
 PASSWORD = "your_password"         # 🔴 [ต้องใส่] รหัสผ่านเข้าเซิร์ฟเวอร์
 USERNAME = "Mumble-Gateway"     # 🔴 [ต้องใส่] ชื่อที่จะแสดงในแอป Mumble
 
-# --- 🔴 รายชื่อห้องที่จะให้ระบบทำงาน (ห้ามลืมแก้ไขส่วนนี้เด็ดขาด!) ---
+OLED_ADDRESS = 0x3C                       # 🔴 Address ของจอ (ตามที่สแกนเจอ 0x3C)
+
+# --- 🔴 รายชื่อห้องที่จะให้ระบบทำงาน ---
 ROOMS = ["CH1", "CH2", "CH3", "CH4"]  # 🔴 [ต้องแก้] เปลี่ยนชื่อ CH1, CH2... เป็นชื่อห้องของคุณ
 
 # การกำหนดห้องเริ่มต้นเมื่อเปิดเครื่อง
@@ -197,8 +233,27 @@ RATE = 48000
 CHUNK = 960  
 # =======================================================
 
-lcd = LCD()
+# --- Safe OLED Initialization (รองรับ SH1106 และ SSD1306) ---
+device = None
+oled_enabled = False
 lcd_lock = threading.Lock()
+
+try:
+    serial = i2c(port=1, address=OLED_ADDRESS)
+    # จอ 1.3 นิ้วส่วนใหญ่ใช้ไดรเวอร์ sh1106
+    # (หากหน้าจอขึ้นเป็นเส้นลายๆ ให้เปลี่ยน sh1106 เป็น ssd1306)
+    device = sh1106(serial) 
+    oled_enabled = True
+    print(f"✅ OLED Display (1.3\") Connected at Address 0x{OLED_ADDRESS:02X}")
+except Exception as e:
+    print(f"⚠️ Warning: Could not initialize OLED Display at 0x{OLED_ADDRESS:02X} ({e})")
+    print("⚠️ Program will continue running WITHOUT OLED display.")
+
+# โหลดฟอนต์มาตรฐาน
+try:
+    font = ImageFont.load_default()
+except:
+    font = None
 
 # ตั้งค่า GPIO
 GPIO.setwarnings(False)
@@ -211,9 +266,18 @@ GPIO.setup(GPIO_BTN_UP, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(GPIO_BTN_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 def update_display(line1, line2):
+    if not oled_enabled or device is None:
+        return
     with lcd_lock:
-        lcd.text(line1, 1)
-        lcd.text(line2, 2)
+        try:
+            with canvas(device) as draw:
+                # วาดกรอบสี่เหลี่ยมแต่งหน้าจอ
+                draw.rectangle(device.bounding_box, outline="white", fill="black")
+                # แสดงข้อความบรรทัดที่ 1 และ 2
+                draw.text((8, 12), str(line1), fill="white", font=font)
+                draw.text((8, 38), str(line2), fill="white", font=font)
+        except Exception as e:
+            print(f"⚠️ OLED Write Warning: {e}")
 
 # ==================== BUTTON CALLBACKS ====================
 def change_room(direction, source="Button"):
@@ -258,7 +322,6 @@ def check_audio_device():
         usb_idx = None
         for i in range(p.get_device_count()):
             dev_info = p.get_device_info_by_index(i)
-            # 🔴 หากใช้ Sound Card รุ่นอื่น ให้แก้คำว่า "C-Media" หรือ "USB" เป็นชื่อรุ่นของคุณ
             if "USB" in dev_info['name'] or "C-Media" in dev_info['name']:
                 usb_idx = i
                 break
@@ -323,8 +386,9 @@ def sound_received_handler(user, soundchunk):
     if user and 'name' in user:
         user_speaking_status[user['name']] = time.time()
     try:
-        stream_out.write(soundchunk.pcm)
-    except:
+        if stream_out and stream_out.is_active():
+            stream_out.write(soundchunk.pcm)
+    except Exception:
         pass
 
 def vox_monitor_thread(mumble_instance):
@@ -333,21 +397,22 @@ def vox_monitor_thread(mumble_instance):
 
     while True:
         try:
-            data = stream_in.read(CHUNK, exception_on_overflow=False)
-            if is_transmitting:
-                continue
+            if stream_in and stream_in.is_active():
+                data = stream_in.read(CHUNK, exception_on_overflow=False)
+                if is_transmitting:
+                    continue
 
-            audio_data = np.frombuffer(data, dtype=np.int16)
-            rms = np.sqrt(np.mean(np.square(audio_data.astype(np.float32))))
+                audio_data = np.frombuffer(data, dtype=np.int16)
+                rms = np.sqrt(np.mean(np.square(audio_data.astype(np.float32))))
 
-            if rms > VOX_THRESHOLD:
-                last_vox_trigger_time = time.time()
-                is_vox_active = True
-                mumble_instance.sound_output.add_sound(data)
-            else:
-                if time.time() - last_vox_trigger_time > VOX_HANG_TIME:
-                    is_vox_active = False
-        except:
+                if rms > VOX_THRESHOLD:
+                    last_vox_trigger_time = time.time()
+                    is_vox_active = True
+                    mumble_instance.sound_output.add_sound(data)
+                else:
+                    if time.time() - last_vox_trigger_time > VOX_HANG_TIME:
+                        is_vox_active = False
+        except Exception:
             time.sleep(0.01)
 
 # ==================== WEB UI (FLASK) ====================
@@ -593,11 +658,21 @@ finally:
     if 'mumble' in globals() and mumble.is_alive(): mumble.stop()
     GPIO.output(GPIO_PTT, GPIO.LOW)
     GPIO.cleanup()
-    if stream_in: stream_in.stop_stream(); stream_in.close()
-    if stream_out: stream_out.stop_stream(); stream_out.close()
-    if p: p.terminate()
-    with lcd_lock: lcd.clear()
+    if stream_in: 
+        try: stream_in.stop_stream(); stream_in.close()
+        except: pass
+    if stream_out: 
+        try: stream_out.stop_stream(); stream_out.close()
+        except: pass
+    if p: 
+        try: p.terminate()
+        except: pass
+    if oled_enabled and device:
+        with lcd_lock: 
+            try: device.clear()
+            except: pass
     print("System Cleaned and Exited.")
+
 ```
 
 **วิธีเข้าหน้า WebUI:**
