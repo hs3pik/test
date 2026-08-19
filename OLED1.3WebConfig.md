@@ -467,7 +467,8 @@ HTML_TEMPLATE = """
         .form-group label { display: block; margin-bottom: 5px; font-size: 0.85rem; color: #94a3b8; }
         .form-group input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-inner); color: white; box-sizing: border-box; }
         
-        .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px; }
+        .modal-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px; }
+        .modal-footer-right { display: flex; gap: 10px; }
         .btn-save { background: var(--color-ready); color: black; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold;}
         
         @media (max-width: 768px) { 
@@ -475,6 +476,9 @@ HTML_TEMPLATE = """
             .header { flex-direction: column; gap: 15px; }
             .form-grid { grid-template-columns: 1fr; }
             .form-group.full { grid-column: span 1; }
+            .modal-footer { flex-direction: column-reverse; gap: 15px; }
+            .modal-footer-right { width: 100%; justify-content: space-between; }
+            .btn-restart { width: 100%; }
         }
     </style>
 </head>
@@ -484,7 +488,6 @@ HTML_TEMPLATE = """
             <h1>📻 Gateway Radio</h1>
             <div class="btn-group">
                 <button class="btn-action" onclick="openConfig()">⚙️ Settings</button>
-                <button class="btn-action btn-restart" onclick="restartGateway()">🔄 Restart</button>
             </div>
         </div>
         <div class="grid-layout">
@@ -564,8 +567,11 @@ HTML_TEMPLATE = """
 
         </div>
         <div class="modal-footer">
-            <button class="btn-action" onclick="closeConfig()">Cancel</button>
-            <button class="btn-save" onclick="saveConfig()">Save & Restart</button>
+            <button class="btn-action btn-restart" onclick="restartGateway()">🔄 Restart System</button>
+            <div class="modal-footer-right">
+                <button class="btn-action" onclick="closeConfig()">Cancel</button>
+                <button class="btn-save" onclick="saveConfig()">Save & Restart</button>
+            </div>
         </div>
     </div>
 
@@ -593,6 +599,7 @@ HTML_TEMPLATE = """
 
         async function restartGateway() {
             if(confirm("🚨 ยืนยันการรีสตาร์ท Gateway?")) {
+                closeConfig();
                 document.getElementById('status-badge').innerText = "RESTARTING...";
                 document.getElementById('status-badge').className = "status-badge bg-tx";
                 fetch('/api/restart', { method: 'POST' });
