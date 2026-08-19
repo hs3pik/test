@@ -97,19 +97,29 @@ sudo reboot
 
 **1. ติดตั้งเครื่องมือพื้นฐานและไลบรารีระบบ (ต้องทำก่อนเสมอ)**
 ให้รันคำสั่งเหล่านี้ทีละบรรทัด เพื่อเตรียมความพร้อมให้กับระบบ:
+
 ```bash
-sudo apt update && sudo apt install -y python3-pip
+sudo apt update
+```
+
+```bash
+sudo apt install -y python3-pip
+```
+
+**2. ติดตั้งไลบรารี Python ทั้งหมดที่ระบบต้องการ:**
+
+```bash
 sudo apt install -y portaudio19-dev python3-dev build-essential i2c-tools pinctrl
 ```
 
 ```bash
-sudo apt update && sudo apt install -y portaudio19-dev python3-dev build-essential i2c-tools
-```
-
-**2. ติดตั้งไลบรารี Python ทั้งหมดที่ระบบต้องการ:**
-```bash
 pip3 install pymumble smbus2 pyaudio RPi.GPIO rpi_lcd numpy flask --break-system-packages
 ```
+
+```bash
+sudo apt install -y python3-dev portaudio19-dev libasound2-dev
+```
+
 ## บทที่ 5: การรันระบบ Gateway หลัก (พร้อมระบบ WebUI)
 
 ⚠️ **หมายเหตุสำคัญก่อนเริ่มรันโปรแกรม:**
