@@ -86,15 +86,19 @@ sudo reboot
 เพื่อป้องกัน Error บนระบบปฏิบัติการ OS รุ่นใหม่ ให้พิมพ์คำสั่งตามนี้ทีละบรรทัดครับ:
 
 **1. ติดตั้งเครื่องมือพื้นฐานและไลบรารีระบบ (ต้องทำก่อนเสมอ)**
+
 ```bash
+
 sudo apt update
 sudo apt install -y python3-pip python3-dev build-essential i2c-tools portaudio19-dev libasound2-dev libopenjp2-7 libtiff6 libopenblas0
 ```
 
 **2. ติดตั้งไลบรารี Python ทั้งหมดที่ระบบต้องการ:**
+
 ```bash
-sudo pip3 install pymumble smbus2 pyaudio numpy flask rpi_lcd rpi-lgpio --break-system-packages
+sudo pip3 install pymumble smbus2 pyaudio numpy flask luma.oled pillow rpi-lgpio --break-system-packages
 ```
+
 ## บทที่ 5: การรันระบบ Gateway หลัก (พร้อมระบบ WebUI)
 
 ⚠️ **หมายเหตุสำคัญก่อนเริ่มรันโปรแกรม:**
