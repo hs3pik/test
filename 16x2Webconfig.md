@@ -126,6 +126,7 @@ import subprocess
 import ssl
 import json
 import os
+import signal  # 🔴 นำเข้าไลบรารี signal สำหรับจัดการการปิดโปรแกรม
 from pymumble_py3 import Mumble
 
 # นำเข้าไลบรารีจอ LCD 16x2
@@ -134,6 +135,15 @@ from rpi_lcd import LCD
 # ปิด Log ของ Flask ไม่ให้รก Terminal
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
+
+# =======================================================
+# 🔴 เพิ่มฟังก์ชันดักจับ SIGTERM จาก systemctl เพื่อให้คืนค่า Hardware ตอน Restart ได้สมบูรณ์
+def handle_sigterm(signum, frame):
+    print("\nReceived SIGTERM, shutting down gracefully...")
+    raise KeyboardInterrupt()
+
+signal.signal(signal.SIGTERM, handle_sigterm)
+# =======================================================
 
 # =======================================================
 # แก้ปัญหา SSL สำหรับ Python 3.13 ขึ้นไป
@@ -692,7 +702,8 @@ def api_change_room():
 
 @app.route('/api/restart', methods=['POST'])
 def api_restart():
-    subprocess.Popen(["sudo", "systemctl", "restart", "mumble-gateway.service"])
+    # 🔴 เพิ่มหน่วงเวลา 1 วินาที เพื่อให้ส่ง Response กลับไปที่ Web ทัน ก่อนที่ service จะตาย
+    subprocess.Popen("sleep 1 && sudo systemctl restart mumble-gateway.service", shell=True)
     return jsonify({"status": "restarting"})
 
 @app.route('/api/get_config', methods=['GET'])
@@ -705,7 +716,8 @@ def api_save_config():
     try:
         with open(CONFIG_FILE, 'w') as f:
             json.dump(new_cfg, f, indent=4)
-        subprocess.Popen(["sudo", "systemctl", "restart", "mumble-gateway.service"])
+        # 🔴 เพิ่มหน่วงเวลา 1 วินาทีเช่นเดียวกัน
+        subprocess.Popen("sleep 1 && sudo systemctl restart mumble-gateway.service", shell=True)
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
