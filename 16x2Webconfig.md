@@ -444,12 +444,16 @@ HTML_TEMPLATE = """
         .header { display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 25px; align-items: center;}
         .header h1 { color: var(--text-cyan); margin: 0; font-size: 1.8rem; }
         .btn-group { display: flex; gap: 10px; }
-        .btn-action { background-color: var(--bg-inner); border: 1px solid var(--border-color); color: var(--text-main); padding: 8px 15px; border-radius: 8px; cursor: pointer; transition: 0.3s; }
-        .btn-restart { border-color: #ef4444; color: #ef4444; }
-        .btn-restart:hover { background-color: rgba(239, 68, 68, 0.2); }
-        .btn-shutdown { border-color: #f97316; color: #f97316; } /* 🔴 สีส้มสำหรับปุ่ม Shutdown */
+        .btn-action { background-color: var(--bg-inner); border: 1px solid var(--border-color); color: var(--text-main); padding: 8px 15px; border-radius: 8px; cursor: pointer; transition: 0.3s; font-size: 0.9rem; }
+        
+        .btn-restart { border-color: #3b82f6; color: #3b82f6; } /* สีฟ้า */
+        .btn-restart:hover { background-color: rgba(59, 130, 246, 0.2); }
+        .btn-shutdown { border-color: #f97316; color: #f97316; } /* สีส้ม */
         .btn-shutdown:hover { background-color: rgba(249, 115, 22, 0.2); }
+        .btn-reset { border-color: #ef4444; color: #ef4444; } /* สีแดง */
+        .btn-reset:hover { background-color: rgba(239, 68, 68, 0.2); }
         .btn-action:hover { background-color: rgba(255, 255, 255, 0.1); }
+        
         .grid-layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
         .sidebar { background-color: var(--bg-inner); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; display: flex; flex-direction: column; max-height: 400px; }
         .user-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex-grow: 1; }
@@ -470,9 +474,9 @@ HTML_TEMPLATE = """
         .footer { text-align: right; margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-color); font-size: 0.85rem; color: #94a3b8; font-style: italic; }
         /* Modal Styles */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 50; }
-        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg-panel); padding: 25px; border: 1px solid var(--border-color); border-radius: 12px; z-index: 100; width: 90%; max-width: 550px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg-panel); padding: 25px; border: 1px solid var(--border-color); border-radius: 12px; z-index: 100; width: 95%; max-width: 600px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
         .modal h2 { margin-top: 0; color: var(--text-cyan); border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
-        .scroll-area { max-height: 65vh; overflow-y: auto; padding-right: 15px; }
+        .scroll-area { max-height: 60vh; overflow-y: auto; padding-right: 15px; }
         .scroll-area::-webkit-scrollbar { width: 8px; }
         .scroll-area::-webkit-scrollbar-track { background: var(--bg-inner); border-radius: 10px; }
         .scroll-area::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 10px; }
@@ -482,9 +486,14 @@ HTML_TEMPLATE = """
         .form-group.full { grid-column: span 2; }
         .form-group label { display: block; margin-bottom: 5px; font-size: 0.85rem; color: #94a3b8; }
         .form-group input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-inner); color: white; box-sizing: border-box; }
-        .modal-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px; }
+        .modal-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px; flex-wrap: wrap; gap: 10px; }
         .modal-footer-right { display: flex; gap: 10px; }
         .btn-save { background: var(--color-ready); color: black; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold;}
+        
+        @media (max-width: 768px) {
+            .modal-footer { flex-direction: column-reverse; align-items: stretch; }
+            .modal-footer-right { justify-content: space-between; margin-bottom: 10px; }
+        }
     </style>
 </head>
 <body>
@@ -554,9 +563,11 @@ HTML_TEMPLATE = """
             </div>
         </div>
         <div class="modal-footer">
-            <div style="display: flex; gap: 10px;">
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                 <button class="btn-action btn-restart" onclick="restartGateway()">🔄 Restart</button>
                 <button class="btn-action btn-shutdown" onclick="shutdownGateway()">🛑 Shutdown</button>
+                <!-- 🔴 ปุ่ม Reset to Default -->
+                <button class="btn-action btn-reset" onclick="resetGateway()">⚠️ Reset</button>
             </div>
             <div class="modal-footer-right">
                 <button class="btn-action" onclick="closeConfig()">Cancel</button>
@@ -597,13 +608,23 @@ HTML_TEMPLATE = """
             }
         }
         
-        // 🔴 ฟังก์ชันปิดเครื่อง
         async function shutdownGateway() {
             if(confirm("🚨 ยืนยันการปิดเครื่อง (Shutdown)?\\n\\nระบบจะถูกปิดเพื่อความปลอดภัย ก่อนถอดปลั๊กให้รอจนกว่าไฟสีเขียวที่บอร์ด Raspberry Pi จะดับสนิท")) {
                 closeConfig();
                 document.getElementById('status-badge').innerText = "SHUTTING DOWN...";
                 document.getElementById('status-badge').className = "status-badge bg-err";
                 fetch('/api/shutdown', { method: 'POST' });
+            }
+        }
+
+        // 🔴 ฟังก์ชัน Reset ค่าเป็นค่าโรงงาน
+        async function resetGateway() {
+            if(confirm("⚠️ คำเตือน: คุณต้องการรีเซ็ตการตั้งค่าทั้งหมดกลับเป็น 'ค่าเริ่มต้นจากโรงงาน' ใช่หรือไม่?\\n\\n(กด OK หรือ ตกลง เพื่อยืนยัน / Cancel หรือ ยกเลิก เพื่อยกเลิก)")) {
+                closeConfig();
+                document.getElementById('status-badge').innerText = "RESETTING...";
+                document.getElementById('status-badge').className = "status-badge bg-tx";
+                fetch('/api/reset_config', { method: 'POST' });
+                setTimeout(() => location.reload(), 12000);
             }
         }
 
@@ -668,12 +689,24 @@ def api_restart():
     subprocess.Popen("sleep 1 && sudo systemctl restart mumble-gateway.service", shell=True)
     return jsonify({"status": "restarting"})
 
-# 🔴 เพิ่ม Endpoint ฝั่ง Python สำหรับสั่ง Shutdown OS
 @app.route('/api/shutdown', methods=['POST'])
 def api_shutdown():
-    # หน่วงเวลา 2 วินาทีเพื่อให้ส่ง HTTP Response กลับไปหาหน้าเว็บสำเร็จก่อนที่เครื่องจะดับ
     subprocess.Popen("sleep 2 && sudo poweroff", shell=True)
     return jsonify({"status": "shutting_down"})
+
+# 🔴 เพิ่ม Endpoint ฝั่ง Python สำหรับรับคำสั่ง Reset
+@app.route('/api/reset_config', methods=['POST'])
+def api_reset_config():
+    try:
+        # เขียนค่า Default ทับไฟล์คอนฟิกเดิม
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(DEFAULT_CONFIG, f, indent=4)
+        
+        # หน่วงเวลา 1 วิ แล้ว Restart เพื่อให้ระบบโหลดค่าตั้งต้นขึ้นมาทำงานใหม่
+        subprocess.Popen("sleep 1 && sudo systemctl restart mumble-gateway.service", shell=True)
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/get_config', methods=['GET'])
 def api_get_config():
