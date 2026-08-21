@@ -81,6 +81,13 @@ sudo reboot
 ช่อง ไมค์  (สีชมพู/สัญลักษณ์ไมค์)   ----------------> ช่องเสียบ หูฟัง/ลำโพง (Spk Out) ของวิทยุ
 ```
 
+**5. Led สีเขียวเพื่อแสดงสภานะ RxActive**
+วิธีการต่อวงจรหลอด LED
+ขาบวก (ขายาว / Anode): ต่อเข้ากับขา GPIO 22 (Pin 15) โดยต้องผ่านตัวต้านทาน (Resistor) ประมาณ 220Ω - 330Ω เพื่อป้องกันหลอด LED ขาด
+
+ขาลบ (ขาสั้น / Cathode): ต่อเข้ากับขา GND (Pin ไหนก็ได้ เช่น Pin 14, 20 หรือ 39) 
+```
+
 ## บทที่ 4: การติดตั้งโปรแกรมและไลบรารี
 
 เพื่อป้องกัน Error บนระบบปฏิบัติการ OS รุ่นใหม่ ให้พิมพ์คำสั่งตามนี้ทีละบรรทัดครับ:
@@ -126,27 +133,19 @@ import subprocess
 import ssl
 import json
 import os
-import signal  # 🔴 นำเข้าไลบรารี signal สำหรับจัดการการปิดโปรแกรม
+import signal
 from pymumble_py3 import Mumble
-
-# นำเข้าไลบรารีจอ LCD 16x2
 from rpi_lcd import LCD
 
-# ปิด Log ของ Flask ไม่ให้รก Terminal
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
-# =======================================================
-# 🔴 เพิ่มฟังก์ชันดักจับ SIGTERM จาก systemctl เพื่อให้คืนค่า Hardware ตอน Restart ได้สมบูรณ์
 def handle_sigterm(signum, frame):
     print("\nReceived SIGTERM, shutting down gracefully...")
     raise KeyboardInterrupt()
 
 signal.signal(signal.SIGTERM, handle_sigterm)
-# =======================================================
 
-# =======================================================
-# แก้ปัญหา SSL สำหรับ Python 3.13 ขึ้นไป
 if not hasattr(ssl, 'wrap_socket'):
     def _wrap_socket(sock, keyfile=None, certfile=None, server_side=False, cert_reqs=ssl.CERT_NONE, ssl_version=ssl.PROTOCOL_TLS, ca_certs=None, do_handshake_on_connect=True, suppress_ragged_eofs=True, ciphers=None):
         context = ssl.SSLContext(ssl_version)
@@ -156,9 +155,8 @@ if not hasattr(ssl, 'wrap_socket'):
             context.load_cert_chain(certfile, keyfile)
         return context.wrap_socket(sock, server_side=server_side, do_handshake_on_connect=do_handshake_on_connect, suppress_ragged_eofs=suppress_ragged_eofs)
     ssl.wrap_socket = _wrap_socket
-# =======================================================
 
-# ==================== 🔴 CONFIGURATION SYSTEM ====================
+# ==================== CONFIGURATION SYSTEM ====================
 CONFIG_FILE = "/home/mumble/config.json"
 
 DEFAULT_CONFIG = {
@@ -172,8 +170,8 @@ DEFAULT_CONFIG = {
     "ROOM_4": "CH4", "ROOM_4_PASS": "",
     "ROOM_5": "CH5", "ROOM_5_PASS": "",
     "ROOM_6": "CH6", "ROOM_6_PASS": "",
-    "VOX_THRESHOLD": 400,
-    "VOX_HANG_TIME": 0.8,
+    "VOX_THRESHOLD": 1000,
+    "VOX_HANG_TIME": 0.7,
     "TX_HANG_TIME": 0.7
 }
 
@@ -196,7 +194,6 @@ PORT = int(cfg.get("PORT", 64738))
 PASSWORD = cfg.get("PASSWORD", "")
 USERNAME = cfg.get("USERNAME", "Mumble-Gateway")
 
-# โหลดห้อง 1-6 และรหัสผ่าน
 ROOMS = []
 ROOM_PASSWORDS = []
 for i in range(1, 7):
@@ -212,27 +209,26 @@ if not ROOMS:
 
 ROOM_PASSWORDS = list(set(ROOM_PASSWORDS))
 
-VOX_THRESHOLD = float(cfg.get("VOX_THRESHOLD", 400))
-VOX_HANG_TIME = float(cfg.get("VOX_HANG_TIME", 0.8))
+VOX_THRESHOLD = float(cfg.get("VOX_THRESHOLD", 1000))
+VOX_HANG_TIME = float(cfg.get("VOX_HANG_TIME", 0.7))
 TX_HANG_TIME = float(cfg.get("TX_HANG_TIME", 0.7))
 
-LCD_ADDRESS = 0x27  # 🔴 Address ของจอ 16x2
+LCD_ADDRESS = 0x27  
 
 current_room_idx = 0  
 ROOM = ROOMS[current_room_idx]
 
-# --- ตั้งค่า Hardware ---
+# 🔴 ตั้งค่า Hardware GPIO
 GPIO_PTT = 26  
 GPIO_BTN_UP = 17    
 GPIO_BTN_DOWN = 27  
+GPIO_LED_RX = 22  # 🔴 ขา GPIO สำหรับไฟ LED แสดงสถานะ RX
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 48000
 CHUNK = 960  
-# =======================================================
 
-# --- Safe LCD 16x2 Initialization & Splash Screen ---
 lcd = None
 lcd_enabled = False
 lcd_lock = threading.Lock()
@@ -240,36 +236,29 @@ lcd_lock = threading.Lock()
 try:
     lcd = LCD(address=LCD_ADDRESS, bus=1)
     lcd_enabled = True
-    print(f"✅ LCD 16x2 Connected at Address 0x{LCD_ADDRESS:02X}")
+    print(f"✅ LCD Connected")
     
-    # 🟢 Boot Splash Screen 
-    # ขั้นที่ 1: แสดง Dx Solution และ HS3PIK ค้าง 1 วินาที
     lcd.text("Dx Solution".center(16), 1)
     lcd.text("HS3PIK".center(16), 2)
     time.sleep(1)
     
-    # ขั้นที่ 2: กระพริบ 1 ครั้ง (ดับ 0.3 วิ แล้วติดใหม่ 0.5 วิ)
     lcd.clear()
     time.sleep(0.3)
     lcd.text("Dx Solution".center(16), 1)
     lcd.text("HS3PIK".center(16), 2)
     time.sleep(0.5)
     
-    # ขั้นที่ 3: ไปต่อที่ Mumble Gateway ค้าง 1 วินาที
     lcd.clear()
     lcd.text("Mumble Gateway".center(16), 1)
-    lcd.text("".center(16), 2)
     time.sleep(1)
-    
     lcd.clear()
-    
 except Exception as e:
-    print(f"⚠️ Warning: Could not initialize LCD ({e})")
+    pass
 
-# ตั้งค่า GPIO
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(GPIO_PTT, GPIO.OUT, initial=GPIO.LOW)
+GPIO.setup(GPIO_LED_RX, GPIO.OUT, initial=GPIO.LOW) # 🔴 เซ็ตขา LED เป็น Output สถานะเริ่มต้นดับ
 GPIO.setup(GPIO_BTN_UP, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(GPIO_BTN_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
@@ -283,9 +272,26 @@ def update_display(line1, line2):
         except Exception as e:
             pass
 
+# ==================== VARIABLES & ALERT SYSTEM ====================
+last_audio_time = 0
+is_transmitting = False
+is_vox_active = False  
+is_access_denied = False  
+last_idle_text = ""
+last_room_text = ""    
+user_speaking_status = {}
+
+ui_alert_msg = ""
+ui_alert_time = 0
+
+def show_alert(msg):
+    global ui_alert_msg, ui_alert_time
+    ui_alert_msg = msg
+    ui_alert_time = time.time()
+
 # ==================== BUTTON CALLBACKS ====================
-def change_room(direction, source="Button"):
-    global current_room_idx, ROOM, mumble
+def change_room_task(direction, source):
+    global current_room_idx, ROOM, mumble, is_access_denied
     if not ROOMS: return
     
     if direction == "UP":
@@ -293,15 +299,34 @@ def change_room(direction, source="Button"):
     elif direction == "DOWN":
         current_room_idx = (current_room_idx - 1) % len(ROOMS)
         
-    ROOM = ROOMS[current_room_idx]
+    target_room_name = ROOMS[current_room_idx]
+    ROOM = target_room_name  
     
     if 'mumble' in globals() and mumble and mumble.is_alive():
-        target_channel = mumble.channels.find_by_name(ROOM)
+        target_channel = mumble.channels.find_by_name(target_room_name)
         if target_channel:
             target_channel.move_in()
-            msg = "Switched!" if source == "Button" else "Switched(Web)!"
-            update_display(f"Room: {ROOM}", msg)
-            print(f"🔄 Switched to room: {ROOM}")
+            time.sleep(0.5)  
+            
+            my_user = next((u for u in mumble.users.values() if u['name'] == USERNAME), None)
+            if my_user and my_user['channel_id'] == target_channel['channel_id']:
+                is_access_denied = False
+                msg = "Switched!" if source == "Button" else "Switched(Web)!"
+                show_alert(msg)
+                print(f"🔄 Switched to room: {ROOM}")
+            else:
+                is_access_denied = True
+                show_alert("Access Denied!")
+                print(f"❌ Access Denied to room: {target_room_name}")
+        else:
+            is_access_denied = True
+            show_alert("Room Not Found")
+    else:
+        is_access_denied = True
+        show_alert("Offline Switch")
+
+def change_room(direction, source="Button"):
+    threading.Thread(target=change_room_task, args=(direction, source), daemon=True).start()
 
 def btn_up_callback(channel): change_room("UP")
 def btn_down_callback(channel): change_room("DOWN")
@@ -366,14 +391,6 @@ def wait_for_network():
         update_display("Network Error", "Waiting IP...")
         time.sleep(2)
 
-# ==================== VARIABLES ====================
-last_audio_time = 0
-is_transmitting = False
-is_vox_active = False  
-last_idle_text = ""    
-user_speaking_status = {}
-
-# ==================== FUNCTIONS ====================
 def sound_received_handler(user, soundchunk):
     global last_audio_time
     last_audio_time = time.time()
@@ -386,7 +403,7 @@ def sound_received_handler(user, soundchunk):
         pass
 
 def vox_monitor_thread(mumble_instance):
-    global is_vox_active, is_transmitting
+    global is_vox_active, is_transmitting, is_access_denied
     last_vox_trigger_time = 0
 
     while True:
@@ -401,8 +418,9 @@ def vox_monitor_thread(mumble_instance):
 
                 if rms > VOX_THRESHOLD:
                     last_vox_trigger_time = time.time()
-                    is_vox_active = True
-                    mumble_instance.sound_output.add_sound(data)
+                    if not is_access_denied:
+                        is_vox_active = True
+                        mumble_instance.sound_output.add_sound(data)
                 else:
                     if time.time() - last_vox_trigger_time > VOX_HANG_TIME:
                         is_vox_active = False
@@ -422,23 +440,20 @@ HTML_TEMPLATE = """
     <style>
         :root { --bg-dark: #0f151c; --bg-panel: #1a2332; --bg-inner: #111827; --text-main: #e2e8f0; --text-cyan: #00e5ff; --border-color: #2d3748; --color-ready: #22c55e; --color-tx: #ef4444; --color-rx: #3b82f6; }
         body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg-dark); color: var(--text-main); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        .container { background-color: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px 30px; width: 100%; max-width: 1000px; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.5);}
+        .container { background-color: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px 30px; width: 100%; max-width: 1000px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);}
         .header { display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 25px; align-items: center;}
         .header h1 { color: var(--text-cyan); margin: 0; font-size: 1.8rem; }
-        
         .btn-group { display: flex; gap: 10px; }
         .btn-action { background-color: var(--bg-inner); border: 1px solid var(--border-color); color: var(--text-main); padding: 8px 15px; border-radius: 8px; cursor: pointer; transition: 0.3s; }
         .btn-restart { border-color: #ef4444; color: #ef4444; }
         .btn-restart:hover { background-color: rgba(239, 68, 68, 0.2); }
         .btn-action:hover { background-color: rgba(255, 255, 255, 0.1); }
-
         .grid-layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
         .sidebar { background-color: var(--bg-inner); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; display: flex; flex-direction: column; max-height: 400px; }
         .user-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex-grow: 1; }
         .user-item { background-color: var(--bg-panel); padding: 10px 15px; margin-bottom: 8px; border-radius: 6px; display: flex; justify-content: space-between; }
         .mic-icon { width: 12px; height: 12px; border-radius: 50%; background-color: #4a5568; }
         .mic-active { background-color: var(--color-ready); box-shadow: 0 0 8px var(--color-ready); }
-        
         .main-panel { display: flex; flex-direction: column; gap: 15px; }
         .top-status { background-color: var(--bg-inner); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
         .room-controls { display: flex; align-items: center; gap: 15px; }
@@ -448,40 +463,26 @@ HTML_TEMPLATE = """
         .bg-ready { color: var(--color-ready); border: 2px solid var(--color-ready); background: rgba(34, 197, 94, 0.1); }
         .bg-tx { color: var(--color-tx); border: 2px solid var(--color-tx); background: rgba(239, 68, 68, 0.1); }
         .bg-rx { color: var(--color-rx); border: 2px solid var(--color-rx); background: rgba(59, 130, 246, 0.1); }
-        .bg-err { color: #facc15; border: 2px solid #facc15; background: rgba(250, 204, 21, 0.1); font-size: 1.2rem; }
-        
+        .bg-err { color: #ef4444; border: 2px solid #ef4444; background: rgba(239, 68, 68, 0.1); }
+        .bg-warn { color: #facc15; border: 2px solid #facc15; background: rgba(250, 204, 21, 0.1); font-size: 1.2rem; }
         .footer { text-align: right; margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border-color); font-size: 0.85rem; color: #94a3b8; font-style: italic; }
-
         /* Modal Styles */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 50; }
         .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg-panel); padding: 25px; border: 1px solid var(--border-color); border-radius: 12px; z-index: 100; width: 90%; max-width: 550px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
         .modal h2 { margin-top: 0; color: var(--text-cyan); border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
         .scroll-area { max-height: 65vh; overflow-y: auto; padding-right: 15px; }
-        
         .scroll-area::-webkit-scrollbar { width: 8px; }
         .scroll-area::-webkit-scrollbar-track { background: var(--bg-inner); border-radius: 10px; }
         .scroll-area::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 10px; }
-        
         .cfg-section { margin-top: 20px; margin-bottom: 15px; color: #cbd5e1; font-weight: bold; font-size: 1.1rem; }
         .form-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; }
         .form-group { margin-bottom: 10px; }
         .form-group.full { grid-column: span 2; }
         .form-group label { display: block; margin-bottom: 5px; font-size: 0.85rem; color: #94a3b8; }
         .form-group input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-inner); color: white; box-sizing: border-box; }
-        
         .modal-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px; }
         .modal-footer-right { display: flex; gap: 10px; }
         .btn-save { background: var(--color-ready); color: black; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold;}
-        
-        @media (max-width: 768px) { 
-            .grid-layout { grid-template-columns: 1fr; } 
-            .header { flex-direction: column; gap: 15px; }
-            .form-grid { grid-template-columns: 1fr; }
-            .form-group.full { grid-column: span 1; }
-            .modal-footer { flex-direction: column-reverse; gap: 15px; }
-            .modal-footer-right { width: 100%; justify-content: space-between; }
-            .btn-restart { width: 100%; }
-        }
     </style>
 </head>
 <body>
@@ -521,7 +522,6 @@ HTML_TEMPLATE = """
     <div class="modal" id="config-modal">
         <h2>⚙️ Configuration</h2>
         <div class="scroll-area">
-            
             <div class="cfg-section">🌐 Server Setup</div>
             <div class="form-grid">
                 <div class="form-group full"><label>Server IP / Domain</label><input type="text" id="cfg-ip"></div>
@@ -529,44 +529,27 @@ HTML_TEMPLATE = """
                 <div class="form-group"><label>Server Password</label><input type="text" id="cfg-pass"></div>
                 <div class="form-group full"><label>Bot Username</label><input type="text" id="cfg-user"></div>
             </div>
-
             <div class="cfg-section">📻 Rooms & Passwords</div>
             <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
                 <div class="form-group"><label>Room 1 Name</label><input type="text" id="cfg-rm1"></div>
-                <div class="form-group"><label>Room 1 Pass</label><input type="text" id="cfg-rm1-p" placeholder="Leave blank if none"></div>
-                
+                <div class="form-group"><label>Room 1 Pass</label><input type="text" id="cfg-rm1-p"></div>
                 <div class="form-group"><label>Room 2 Name</label><input type="text" id="cfg-rm2"></div>
                 <div class="form-group"><label>Room 2 Pass</label><input type="text" id="cfg-rm2-p"></div>
-                
                 <div class="form-group"><label>Room 3 Name</label><input type="text" id="cfg-rm3"></div>
                 <div class="form-group"><label>Room 3 Pass</label><input type="text" id="cfg-rm3-p"></div>
-                
                 <div class="form-group"><label>Room 4 Name</label><input type="text" id="cfg-rm4"></div>
                 <div class="form-group"><label>Room 4 Pass</label><input type="text" id="cfg-rm4-p"></div>
-                
                 <div class="form-group"><label>Room 5 Name</label><input type="text" id="cfg-rm5"></div>
                 <div class="form-group"><label>Room 5 Pass</label><input type="text" id="cfg-rm5-p"></div>
-                
                 <div class="form-group"><label>Room 6 Name</label><input type="text" id="cfg-rm6"></div>
                 <div class="form-group"><label>Room 6 Pass</label><input type="text" id="cfg-rm6-p"></div>
             </div>
-
-            <div class="cfg-section">🎧 Radio Tuning (Timings)</div>
+            <div class="cfg-section">🎧 Radio Tuning</div>
             <div class="form-grid">
-                <div class="form-group full">
-                    <label>VOX Threshold (ความไวรับเสียง: ค่ามาตรฐาน 400)</label>
-                    <input type="number" id="cfg-vox-th" step="50">
-                </div>
-                <div class="form-group">
-                    <label>RX Hang Time (Sec) (หน่วงเวลาฝั่งรับ: แนะนำ 1.0)</label>
-                    <input type="number" id="cfg-vox-hang" step="0.1">
-                </div>
-                <div class="form-group">
-                    <label>TX Hang Time (Sec) (หน่วงเวลาฝั่งส่ง: แนะนำ 1.0)</label>
-                    <input type="number" id="cfg-tx-hang" step="0.1">
-                </div>
+                <div class="form-group full"><label>VOX Threshold (แนะนำ: 1000)</label><input type="number" id="cfg-vox-th" step="50"></div>
+                <div class="form-group"><label>RX Hang Time (แนะนำ: 0.7)</label><input type="number" id="cfg-vox-hang" step="0.1"></div>
+                <div class="form-group"><label>TX Hang Time (แนะนำ: 0.7)</label><input type="number" id="cfg-tx-hang" step="0.1"></div>
             </div>
-
         </div>
         <div class="modal-footer">
             <button class="btn-action btn-restart" onclick="restartGateway()">🔄 Restart System</button>
@@ -609,80 +592,45 @@ HTML_TEMPLATE = """
             }
         }
 
-        // --- Config Functions ---
         async function openConfig() {
             try {
-                const res = await fetch('/api/get_config');
-                const cfg = await res.json();
-                
-                document.getElementById('cfg-ip').value = cfg.SERVER_IP || "";
-                document.getElementById('cfg-port').value = cfg.PORT || 64738;
-                document.getElementById('cfg-pass').value = cfg.PASSWORD || "";
-                document.getElementById('cfg-user').value = cfg.USERNAME || "";
-                
-                document.getElementById('cfg-rm1').value = cfg.ROOM_1 || "";
-                document.getElementById('cfg-rm1-p').value = cfg.ROOM_1_PASS || "";
-                document.getElementById('cfg-rm2').value = cfg.ROOM_2 || "";
-                document.getElementById('cfg-rm2-p').value = cfg.ROOM_2_PASS || "";
-                document.getElementById('cfg-rm3').value = cfg.ROOM_3 || "";
-                document.getElementById('cfg-rm3-p').value = cfg.ROOM_3_PASS || "";
-                document.getElementById('cfg-rm4').value = cfg.ROOM_4 || "";
-                document.getElementById('cfg-rm4-p').value = cfg.ROOM_4_PASS || "";
-                document.getElementById('cfg-rm5').value = cfg.ROOM_5 || "";
-                document.getElementById('cfg-rm5-p').value = cfg.ROOM_5_PASS || "";
-                document.getElementById('cfg-rm6').value = cfg.ROOM_6 || "";
-                document.getElementById('cfg-rm6-p').value = cfg.ROOM_6_PASS || "";
-                
-                document.getElementById('cfg-vox-th').value = cfg.VOX_THRESHOLD || 400;
-                document.getElementById('cfg-vox-hang').value = cfg.VOX_HANG_TIME || 0.8;
+                const res = await fetch('/api/get_config'); const cfg = await res.json();
+                document.getElementById('cfg-ip').value = cfg.SERVER_IP || ""; document.getElementById('cfg-port').value = cfg.PORT || 64738;
+                document.getElementById('cfg-pass').value = cfg.PASSWORD || ""; document.getElementById('cfg-user').value = cfg.USERNAME || "";
+                for(let i=1; i<=6; i++) {
+                    document.getElementById(`cfg-rm${i}`).value = cfg[`ROOM_${i}`] || "";
+                    document.getElementById(`cfg-rm${i}-p`).value = cfg[`ROOM_${i}_PASS`] || "";
+                }
+                document.getElementById('cfg-vox-th').value = cfg.VOX_THRESHOLD || 1000;
+                document.getElementById('cfg-vox-hang').value = cfg.VOX_HANG_TIME || 0.7;
                 document.getElementById('cfg-tx-hang').value = cfg.TX_HANG_TIME || 0.7;
-                
-                document.getElementById('modal-overlay').style.display = 'block';
-                document.getElementById('config-modal').style.display = 'block';
-            } catch(e) { alert("Cannot load config"); }
+                document.getElementById('modal-overlay').style.display = 'block'; document.getElementById('config-modal').style.display = 'block';
+            } catch(e) {}
         }
 
         function closeConfig() {
-            document.getElementById('modal-overlay').style.display = 'none';
-            document.getElementById('config-modal').style.display = 'none';
+            document.getElementById('modal-overlay').style.display = 'none'; document.getElementById('config-modal').style.display = 'none';
         }
 
         async function saveConfig() {
             const newCfg = {
-                SERVER_IP: document.getElementById('cfg-ip').value,
-                PORT: parseInt(document.getElementById('cfg-port').value),
-                PASSWORD: document.getElementById('cfg-pass').value,
-                USERNAME: document.getElementById('cfg-user').value,
-                ROOM_1: document.getElementById('cfg-rm1').value,
-                ROOM_1_PASS: document.getElementById('cfg-rm1-p').value,
-                ROOM_2: document.getElementById('cfg-rm2').value,
-                ROOM_2_PASS: document.getElementById('cfg-rm2-p').value,
-                ROOM_3: document.getElementById('cfg-rm3').value,
-                ROOM_3_PASS: document.getElementById('cfg-rm3-p').value,
-                ROOM_4: document.getElementById('cfg-rm4').value,
-                ROOM_4_PASS: document.getElementById('cfg-rm4-p').value,
-                ROOM_5: document.getElementById('cfg-rm5').value,
-                ROOM_5_PASS: document.getElementById('cfg-rm5-p').value,
-                ROOM_6: document.getElementById('cfg-rm6').value,
-                ROOM_6_PASS: document.getElementById('cfg-rm6-p').value,
-                VOX_THRESHOLD: parseFloat(document.getElementById('cfg-vox-th').value),
-                VOX_HANG_TIME: parseFloat(document.getElementById('cfg-vox-hang').value),
+                SERVER_IP: document.getElementById('cfg-ip').value, PORT: parseInt(document.getElementById('cfg-port').value),
+                PASSWORD: document.getElementById('cfg-pass').value, USERNAME: document.getElementById('cfg-user').value,
+                VOX_THRESHOLD: parseFloat(document.getElementById('cfg-vox-th').value), VOX_HANG_TIME: parseFloat(document.getElementById('cfg-vox-hang').value),
                 TX_HANG_TIME: parseFloat(document.getElementById('cfg-tx-hang').value)
             };
-            
+            for(let i=1; i<=6; i++) {
+                newCfg[`ROOM_${i}`] = document.getElementById(`cfg-rm${i}`).value;
+                newCfg[`ROOM_${i}_PASS`] = document.getElementById(`cfg-rm${i}-p`).value;
+            }
             try {
-                await fetch('/api/save_config', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newCfg)
-                });
-                closeConfig();
-                document.getElementById('status-badge').innerText = "APPLYING...";
+                await fetch('/api/save_config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCfg) });
+                closeConfig(); 
+                document.getElementById('status-badge').innerText = "SAVING & RESTARTING..."; 
                 document.getElementById('status-badge').className = "status-badge bg-tx";
                 setTimeout(() => location.reload(), 12000);
-            } catch(e) { alert("Failed to save configuration."); }
+            } catch(e) {}
         }
-
         setInterval(fetchStatus, 500); fetchStatus();
     </script>
 </body>
@@ -698,11 +646,10 @@ def api_change_room():
     direction = request.json.get('direction')
     if direction in ["UP", "DOWN"]:
         change_room(direction, source="Web")
-    return jsonify({"status": "success", "room": ROOM})
+    return jsonify({"status": "processing"})
 
 @app.route('/api/restart', methods=['POST'])
 def api_restart():
-    # 🔴 เพิ่มหน่วงเวลา 1 วินาที เพื่อให้ส่ง Response กลับไปที่ Web ทัน ก่อนที่ service จะตาย
     subprocess.Popen("sleep 1 && sudo systemctl restart mumble-gateway.service", shell=True)
     return jsonify({"status": "restarting"})
 
@@ -716,7 +663,6 @@ def api_save_config():
     try:
         with open(CONFIG_FILE, 'w') as f:
             json.dump(new_cfg, f, indent=4)
-        # 🔴 เพิ่มหน่วงเวลา 1 วินาทีเช่นเดียวกัน
         subprocess.Popen("sleep 1 && sudo systemctl restart mumble-gateway.service", shell=True)
         return jsonify({"status": "success"})
     except Exception as e:
@@ -724,15 +670,28 @@ def api_save_config():
 
 @app.route('/api/status')
 def api_status():
-    global mumble, mumble_connected
+    global mumble, mumble_connected, ui_alert_msg, ui_alert_time, is_access_denied, current_room_idx
     if not mumble_connected:
-        return jsonify({ "state_text": "SETUP REQUIRED", "state_color": "bg-err", "room": "-", "users": [] })
+        return jsonify({ "state_text": "SETUP REQUIRED", "state_color": "bg-warn", "room": "-", "users": [] })
 
     state_text, state_color = "STANDBY", "bg-ready"
-    if is_transmitting:
-        state_text, state_color = "TX ACTIVE", "bg-tx"
-    elif is_vox_active:
-        state_text, state_color = "RX ACTIVE", "bg-rx"
+    current_time = time.time()
+    
+    if current_time - ui_alert_time < 3.0:
+        state_text = ui_alert_msg
+        if "Denied" in ui_alert_msg or "Error" in ui_alert_msg or "Not Found" in ui_alert_msg:
+            state_color = "bg-err"
+        else:
+            state_color = "bg-ready"
+    elif is_access_denied:
+        state_text = "Access Denied!"
+        state_color = "bg-err"
+    elif is_transmitting:
+        state_text = "TX ACTIVE"
+        state_color = "bg-tx"
+    elif is_vox_active and not is_access_denied:
+        state_text = "RX ACTIVE"
+        state_color = "bg-rx"
 
     users = []
     if 'mumble' in globals() and mumble and mumble.is_alive():
@@ -744,7 +703,8 @@ def api_status():
                     is_speaking = (time.time() - user_speaking_status.get(name, 0)) < 0.5
                     users.append({"name": name, "is_speaking": is_speaking})
     
-    return jsonify({ "state_text": state_text, "state_color": state_color, "room": ROOM, "users": sorted(users, key=lambda x: x['name']) })
+    room_str = f"Room{current_room_idx + 1}: {ROOM}"
+    return jsonify({ "state_text": state_text, "state_color": state_color, "room": room_str, "users": sorted(users, key=lambda x: x['name']) })
 
 def run_web_server():
     app.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
@@ -764,8 +724,6 @@ try:
     if SERVER_IP:
         try:
             update_display("Connecting...", SERVER_IP)
-            
-            # ส่งกุญแจ (Tokens) ทั้งหมดเข้าไปตอนเริ่มล็อกอิน
             mumble = Mumble(SERVER_IP, USERNAME, password=PASSWORD, port=PORT, tokens=ROOM_PASSWORDS)
             mumble.start()
             mumble.is_ready()
@@ -774,16 +732,20 @@ try:
             target_channel = mumble.channels.find_by_name(ROOM)
             if target_channel: 
                 target_channel.move_in()
-                
+                time.sleep(0.5)
+                my_user = next((u for u in mumble.users.values() if u['name'] == USERNAME), None)
+                if my_user and my_user['channel_id'] == target_channel['channel_id']:
+                    is_access_denied = False
+                else:
+                    is_access_denied = True
+                    
             mumble.callbacks.set_callback("sound_received", sound_received_handler)
             threading.Thread(target=vox_monitor_thread, args=(mumble,), daemon=True).start()
             mumble_connected = True
             update_display("Server Status", "Connected! OK")
         except Exception as e:
-            print(f"⚠️ Mumble Connection Error: {e}")
             mumble_connected = False
     else:
-        print("⚠️ No Server IP configured.")
         mumble_connected = False
 
     while True: 
@@ -794,32 +756,51 @@ try:
                 GPIO.output(GPIO_PTT, GPIO.LOW)
                 is_transmitting = False
             
+            # 🔴 ปิดไฟ LED RX เมื่อไม่มีการเชื่อมต่อ
+            GPIO.output(GPIO_LED_RX, GPIO.LOW)
+            
             dots = "." * (int(current_time * 2) % 4)
-            update_display("Setup Required", f"IP: {current_ip}{dots}")
+            update_display("Setup Required", f"{current_ip}{dots}")
             time.sleep(2)
             continue
         
+        room_display_text = f"Room{current_room_idx + 1}:{ROOM}"
+        
+        # 🔴 ควบคุมฮาร์ดแวร์ PTT (หลอด TX)
         if current_time - last_audio_time < TX_HANG_TIME:
-            if not is_transmitting:
-                GPIO.output(GPIO_PTT, GPIO.HIGH)
-                update_display(f"Room: {ROOM}", "TX ACTIVE")
-                is_transmitting = True
-                last_idle_text = "TX"
-        elif is_vox_active:
-            if last_idle_text != "RX":
-                update_display(f"Room: {ROOM}", "RX ACTIVE")
-                last_idle_text = "RX"
+            if not is_access_denied:
+                if not is_transmitting:
+                    GPIO.output(GPIO_PTT, GPIO.HIGH)
+                    is_transmitting = True
         else:
             if is_transmitting:
                 GPIO.output(GPIO_PTT, GPIO.LOW)
                 is_transmitting = False
-            
-            dots = "." * (int(current_time * 2) % 4)
-            idle_text = f"Ready{dots:<3}" 
-            if idle_text != last_idle_text:
-                update_display(f"Room: {ROOM}", idle_text)
-                last_idle_text = idle_text
                 
+        # 🔴 ควบคุมไฟ LED สถานะ RX
+        if is_vox_active and not is_access_denied and not is_transmitting:
+            GPIO.output(GPIO_LED_RX, GPIO.HIGH)
+        else:
+            GPIO.output(GPIO_LED_RX, GPIO.LOW)
+                
+        # 🔴 อัปเดตข้อความบนหน้าจอ LCD
+        if current_time - ui_alert_time < 3.0:
+            display_text = ui_alert_msg
+        elif is_access_denied:
+            display_text = "Access Denied!"
+        elif is_transmitting:
+            display_text = "TX ACTIVE"
+        elif is_vox_active and not is_access_denied:
+            display_text = "RX ACTIVE"
+        else:
+            dots = "." * (int(current_time * 2) % 4)
+            display_text = f"Ready{dots:<3}" 
+            
+        if display_text != last_idle_text or room_display_text != last_room_text:
+            update_display(room_display_text, display_text)
+            last_idle_text = display_text
+            last_room_text = room_display_text
+            
         time.sleep(0.05) 
 
 except KeyboardInterrupt:
@@ -827,6 +808,7 @@ except KeyboardInterrupt:
 finally:
     if mumble and mumble.is_alive(): mumble.stop()
     GPIO.output(GPIO_PTT, GPIO.LOW)
+    GPIO.output(GPIO_LED_RX, GPIO.LOW) # 🔴 ปิดไฟ LED ก่อนออกจากโปรแกรม
     GPIO.cleanup()
     if stream_in: 
         try: stream_in.stop_stream(); stream_in.close()
@@ -842,7 +824,6 @@ finally:
             try: lcd.clear()
             except: pass
     print("System Cleaned and Exited.")
-
 
 ```
 
