@@ -117,7 +117,7 @@ sudo pip3 install Flask-SQLAlchemy matplotlib pandas-stubs --break-system-packag
 nano ~/gateway.py
 ```
 
-คัดลอกโค้ดด้านล่างไปวาง (🔴 ห้ามลืมเปลี่ยนค่าในส่วน CONFIGURATION ให้ตรงกับระบบของคุณ):
+คัดลอกโค้ดด้านล่างไปวาง :
 
 ```python
 import time
@@ -218,11 +218,11 @@ LCD_ADDRESS = 0x27
 current_room_idx = 0  
 ROOM = ROOMS[current_room_idx]
 
-# 🔴 ตั้งค่า Hardware GPIO
+# ฮาร์ดแวร์ GPIO
 GPIO_PTT = 26  
 GPIO_BTN_UP = 17    
 GPIO_BTN_DOWN = 27  
-GPIO_LED_RX = 22  # 🔴 ขา GPIO สำหรับไฟ LED แสดงสถานะ RX
+GPIO_LED_RX = 22  
 
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
@@ -258,7 +258,7 @@ except Exception as e:
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(GPIO_PTT, GPIO.OUT, initial=GPIO.LOW)
-GPIO.setup(GPIO_LED_RX, GPIO.OUT, initial=GPIO.LOW) # 🔴 เซ็ตขา LED เป็น Output สถานะเริ่มต้นดับ
+GPIO.setup(GPIO_LED_RX, GPIO.OUT, initial=GPIO.LOW) 
 GPIO.setup(GPIO_BTN_UP, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(GPIO_BTN_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
@@ -447,6 +447,8 @@ HTML_TEMPLATE = """
         .btn-action { background-color: var(--bg-inner); border: 1px solid var(--border-color); color: var(--text-main); padding: 8px 15px; border-radius: 8px; cursor: pointer; transition: 0.3s; }
         .btn-restart { border-color: #ef4444; color: #ef4444; }
         .btn-restart:hover { background-color: rgba(239, 68, 68, 0.2); }
+        .btn-shutdown { border-color: #f97316; color: #f97316; } /* 🔴 สีส้มสำหรับปุ่ม Shutdown */
+        .btn-shutdown:hover { background-color: rgba(249, 115, 22, 0.2); }
         .btn-action:hover { background-color: rgba(255, 255, 255, 0.1); }
         .grid-layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; }
         .sidebar { background-color: var(--bg-inner); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; display: flex; flex-direction: column; max-height: 400px; }
@@ -552,7 +554,10 @@ HTML_TEMPLATE = """
             </div>
         </div>
         <div class="modal-footer">
-            <button class="btn-action btn-restart" onclick="restartGateway()">🔄 Restart System</button>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn-action btn-restart" onclick="restartGateway()">🔄 Restart</button>
+                <button class="btn-action btn-shutdown" onclick="shutdownGateway()">🛑 Shutdown</button>
+            </div>
             <div class="modal-footer-right">
                 <button class="btn-action" onclick="closeConfig()">Cancel</button>
                 <button class="btn-save" onclick="saveConfig()">Save & Restart</button>
@@ -589,6 +594,16 @@ HTML_TEMPLATE = """
                 document.getElementById('status-badge').className = "status-badge bg-tx";
                 fetch('/api/restart', { method: 'POST' });
                 setTimeout(() => location.reload(), 10000); 
+            }
+        }
+        
+        // 🔴 ฟังก์ชันปิดเครื่อง
+        async function shutdownGateway() {
+            if(confirm("🚨 ยืนยันการปิดเครื่อง (Shutdown)?\\n\\nระบบจะถูกปิดเพื่อความปลอดภัย ก่อนถอดปลั๊กให้รอจนกว่าไฟสีเขียวที่บอร์ด Raspberry Pi จะดับสนิท")) {
+                closeConfig();
+                document.getElementById('status-badge').innerText = "SHUTTING DOWN...";
+                document.getElementById('status-badge').className = "status-badge bg-err";
+                fetch('/api/shutdown', { method: 'POST' });
             }
         }
 
@@ -652,6 +667,13 @@ def api_change_room():
 def api_restart():
     subprocess.Popen("sleep 1 && sudo systemctl restart mumble-gateway.service", shell=True)
     return jsonify({"status": "restarting"})
+
+# 🔴 เพิ่ม Endpoint ฝั่ง Python สำหรับสั่ง Shutdown OS
+@app.route('/api/shutdown', methods=['POST'])
+def api_shutdown():
+    # หน่วงเวลา 2 วินาทีเพื่อให้ส่ง HTTP Response กลับไปหาหน้าเว็บสำเร็จก่อนที่เครื่องจะดับ
+    subprocess.Popen("sleep 2 && sudo poweroff", shell=True)
+    return jsonify({"status": "shutting_down"})
 
 @app.route('/api/get_config', methods=['GET'])
 def api_get_config():
@@ -756,7 +778,6 @@ try:
                 GPIO.output(GPIO_PTT, GPIO.LOW)
                 is_transmitting = False
             
-            # 🔴 ปิดไฟ LED RX เมื่อไม่มีการเชื่อมต่อ
             GPIO.output(GPIO_LED_RX, GPIO.LOW)
             
             dots = "." * (int(current_time * 2) % 4)
@@ -766,7 +787,6 @@ try:
         
         room_display_text = f"Room{current_room_idx + 1}:{ROOM}"
         
-        # 🔴 ควบคุมฮาร์ดแวร์ PTT (หลอด TX)
         if current_time - last_audio_time < TX_HANG_TIME:
             if not is_access_denied:
                 if not is_transmitting:
@@ -777,13 +797,11 @@ try:
                 GPIO.output(GPIO_PTT, GPIO.LOW)
                 is_transmitting = False
                 
-        # 🔴 ควบคุมไฟ LED สถานะ RX
         if is_vox_active and not is_access_denied and not is_transmitting:
             GPIO.output(GPIO_LED_RX, GPIO.HIGH)
         else:
             GPIO.output(GPIO_LED_RX, GPIO.LOW)
                 
-        # 🔴 อัปเดตข้อความบนหน้าจอ LCD
         if current_time - ui_alert_time < 3.0:
             display_text = ui_alert_msg
         elif is_access_denied:
@@ -808,7 +826,7 @@ except KeyboardInterrupt:
 finally:
     if mumble and mumble.is_alive(): mumble.stop()
     GPIO.output(GPIO_PTT, GPIO.LOW)
-    GPIO.output(GPIO_LED_RX, GPIO.LOW) # 🔴 ปิดไฟ LED ก่อนออกจากโปรแกรม
+    GPIO.output(GPIO_LED_RX, GPIO.LOW) 
     GPIO.cleanup()
     if stream_in: 
         try: stream_in.stop_stream(); stream_in.close()
@@ -982,4 +1000,18 @@ sudo reboot
 * 🖥️ ดู Log ว่ามีการเตะปลั๊กตัดคีย์หรือไม่: `sudo journalctl -u tot-watchdog.service -f`
 
 *(หากต้องการออกจากหน้าต่างดู Log แบบสด ให้กดปุ่ม `Ctrl + C` ที่คีย์บอร์ด)*
+
+**3. การรีเช็ตค่าทั้งหมด :**
+
+```bash
+sudo rm /home/mumble/config.json
+```
+
+```bash
+sudo systemctl restart mumble-gateway.service
+```
+
+
+
+
                          
