@@ -95,6 +95,10 @@ sudo apt install -y python3-pip python3-dev build-essential i2c-tools portaudio1
 ```bash
 sudo pip3 install pymumble smbus2 pyaudio numpy flask rpi_lcd rpi-lgpio --break-system-packages
 ```
+```bash
+sudo pip3 install Flask-SQLAlchemy matplotlib pandas-stubs --break-system-packages
+```
+
 ## บทที่ 5: การรันระบบ Gateway หลัก (พร้อมระบบ WebUI)
 
 ⚠️ **หมายเหตุสำคัญก่อนเริ่มรันโปรแกรม:**
