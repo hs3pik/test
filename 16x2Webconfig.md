@@ -238,21 +238,21 @@ try:
     lcd_enabled = True
     print(f"✅ LCD Connected")
     
-    # 🔴 ขั้นที่ 1: แสดง Dx Solution / HS3PIK ค้าง 5 วินาที
+    # แสดง Dx Solution / HS3PIK ค้าง 5 วินาที
     lcd.text("Dx Solution".center(16), 1)
     lcd.text("HS3PIK".center(16), 2)
     time.sleep(5) 
     
-    # 🔴 ขั้นที่ 2: กระพริบ
+    # กระพริบ
     lcd.clear()
     time.sleep(0.5)
     
-    # 🔴 ขั้นที่ 3: แสดง Mumble-Gateway ค้าง 4 วินาที
+    # แสดง Mumble-Gateway ค้าง 4 วินาที
     lcd.text("Mumble-Gateway".center(16), 1)
     lcd.text("".center(16), 2)
     time.sleep(4)
     
-    # 🔴 ขั้นที่ 4: กระพริบ แล้วเข้าสู่ขั้นตอนอื่น
+    # กระพริบ แล้วเข้าสู่ขั้นตอนอื่น
     lcd.clear()
     time.sleep(0.5)
 
@@ -555,15 +555,6 @@ HTML_TEMPLATE = """
                 <div class="form-group full"><label>Gateway Name</label><input type="text" id="cfg-user"></div>
             </div>
 
-            <div class="cfg-section">📶 WiFi Connection</div>
-            <div class="form-grid">
-                <div class="form-group"><label>WiFi Name (SSID)</label><input type="text" id="cfg-wifi-ssid" placeholder="ระบุชื่อเครือข่าย WiFi"></div>
-                <div class="form-group"><label>WiFi Password</label><input type="password" id="cfg-wifi-pass" placeholder="ระบุรหัสผ่าน WiFi"></div>
-            </div>
-            <div style="text-align: right; margin-top: 5px; margin-bottom: 20px;">
-                <button class="btn-action" style="border-color: #3b82f6; color: #3b82f6;" onclick="connectWiFi()">🔄 Change WiFi</button>
-            </div>
-
             <div class="cfg-section">📻 Rooms & Passwords</div>
             <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
                 <div class="form-group"><label>Room 1 Name</label><input type="text" id="cfg-rm1"></div>
@@ -651,37 +642,12 @@ HTML_TEMPLATE = """
                 setTimeout(() => location.reload(), 12000);
             }
         }
-        
-        async function connectWiFi() {
-            const ssid = document.getElementById('cfg-wifi-ssid').value.trim();
-            const pass = document.getElementById('cfg-wifi-pass').value;
-            
-            if(!ssid) {
-                alert("กรุณาระบุชื่อ WiFi (SSID) ที่ต้องการเชื่อมต่อ");
-                return;
-            }
-            
-            if(confirm(`🚨 ยืนยันการเปลี่ยน WiFi เป็น "${ssid}" ใช่หรือไม่?\\n\\nเมื่อกด OK บอร์ดจะทำการรีบูตตัวเอง 1 ครั้งเพื่อเชื่อมต่อเครือข่ายใหม่\\n(หาก IP เปลี่ยน คุณจะต้องหา IP ใหม่เองจากหน้าจอ LCD หรือใช้สาย LAN)`)) {
-                closeConfig();
-                document.getElementById('status-badge').innerText = "REBOOTING SYSTEM...";
-                document.getElementById('status-badge').className = "status-badge bg-warn";
-                
-                fetch('/api/wifi', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ssid: ssid, password: pass })
-                });
-            }
-        }
 
         async function openConfig() {
             try {
                 const res = await fetch('/api/get_config'); const cfg = await res.json();
                 document.getElementById('cfg-ip').value = cfg.SERVER_IP || ""; document.getElementById('cfg-port').value = cfg.PORT || 64738;
                 document.getElementById('cfg-pass').value = cfg.PASSWORD || ""; document.getElementById('cfg-user').value = cfg.USERNAME || "";
-                
-                document.getElementById('cfg-wifi-ssid').value = "";
-                document.getElementById('cfg-wifi-pass').value = "";
                 
                 for(let i=1; i<=6; i++) {
                     document.getElementById(`cfg-rm${i}`).value = cfg[`ROOM_${i}`] || "";
@@ -753,22 +719,6 @@ def api_reset_config():
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route('/api/wifi', methods=['POST'])
-def api_wifi():
-    data = request.json
-    ssid = data.get('ssid', '').strip()
-    password = data.get('password', '').strip()
-    
-    if ssid:
-        try:
-            cmd = f'sudo raspi-config nonint do_wifi_country TH ; sudo raspi-config nonint do_wifi_ssid_passphrase "{ssid}" "{password}" ; sleep 2 ; sudo reboot'
-            subprocess.Popen(cmd, shell=True)
-            return jsonify({"status": "success"})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
-            
-    return jsonify({"status": "error", "message": "SSID is required"}), 400
 
 @app.route('/api/get_config', methods=['GET'])
 def api_get_config():
