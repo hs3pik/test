@@ -238,20 +238,24 @@ try:
     lcd_enabled = True
     print(f"✅ LCD Connected")
     
+    # 🔴 ขั้นที่ 1: แสดง Dx Solution / HS3PIK ค้าง 5 วินาที
     lcd.text("Dx Solution".center(16), 1)
     lcd.text("HS3PIK".center(16), 2)
-    time.sleep(1)
+    time.sleep(5) 
     
+    # 🔴 ขั้นที่ 2: กระพริบ
     lcd.clear()
-    time.sleep(0.3)
-    lcd.text("Dx Solution".center(16), 1)
-    lcd.text("HS3PIK".center(16), 2)
     time.sleep(0.5)
     
+    # 🔴 ขั้นที่ 3: แสดง Mumble-Gateway ค้าง 4 วินาที
+    lcd.text("Mumble-Gateway".center(16), 1)
+    lcd.text("".center(16), 2)
+    time.sleep(4)
+    
+    # 🔴 ขั้นที่ 4: กระพริบ แล้วเข้าสู่ขั้นตอนอื่น
     lcd.clear()
-    lcd.text("Mumble Gateway".center(16), 1)
-    time.sleep(1)
-    lcd.clear()
+    time.sleep(0.5)
+
 except Exception as e:
     pass
 
@@ -367,18 +371,24 @@ def check_audio_device():
 
 def get_network_info():
     try:
-        route_output = subprocess.check_output("ip route get 8.8.8.8", shell=True).decode()
-        net_type = "WiFi" if "wlan" in route_output else "LAN" if "eth" in route_output else "Net"
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
+        try:
+            route_output = subprocess.check_output("ip route get 8.8.8.8", shell=True, stderr=subprocess.DEVNULL).decode()
+            net_type = "WiFi" if "wlan" in route_output else "LAN" if "eth" in route_output else "Net"
+        except:
+            net_type = "WiFi"
         return net_type, ip
     except Exception:
         return "Unknown", "No IP"
 
 def wait_for_network():
     update_display("System Check", "Network")
+    time.sleep(1)
+    
+    attempt = 0
     while True:
         try:
             net_type, ip_address = get_network_info()
@@ -388,8 +398,11 @@ def wait_for_network():
                 break
         except Exception:
             pass
-        update_display("Network Error", "Waiting IP...")
-        time.sleep(2)
+            
+        dots = "." * (attempt % 4)
+        update_display("Connecting WiFi", f"Waiting IP{dots}")
+        time.sleep(1)
+        attempt += 1
 
 def sound_received_handler(user, soundchunk):
     global last_audio_time
@@ -446,11 +459,11 @@ HTML_TEMPLATE = """
         .btn-group { display: flex; gap: 10px; }
         .btn-action { background-color: var(--bg-inner); border: 1px solid var(--border-color); color: var(--text-main); padding: 8px 15px; border-radius: 8px; cursor: pointer; transition: 0.3s; font-size: 0.9rem; }
         
-        .btn-restart { border-color: #3b82f6; color: #3b82f6; } /* สีฟ้า */
+        .btn-restart { border-color: #3b82f6; color: #3b82f6; } 
         .btn-restart:hover { background-color: rgba(59, 130, 246, 0.2); }
-        .btn-shutdown { border-color: #f97316; color: #f97316; } /* สีส้ม */
+        .btn-shutdown { border-color: #f97316; color: #f97316; } 
         .btn-shutdown:hover { background-color: rgba(249, 115, 22, 0.2); }
-        .btn-reset { border-color: #ef4444; color: #ef4444; } /* สีแดง */
+        .btn-reset { border-color: #ef4444; color: #ef4444; } 
         .btn-reset:hover { background-color: rgba(239, 68, 68, 0.2); }
         .btn-action:hover { background-color: rgba(255, 255, 255, 0.1); }
         
@@ -533,13 +546,24 @@ HTML_TEMPLATE = """
     <div class="modal" id="config-modal">
         <h2>⚙️ Configuration</h2>
         <div class="scroll-area">
+            
             <div class="cfg-section">🌐 Server Setup</div>
             <div class="form-grid">
                 <div class="form-group full"><label>Server IP / Domain</label><input type="text" id="cfg-ip"></div>
                 <div class="form-group"><label>Port</label><input type="number" id="cfg-port"></div>
                 <div class="form-group"><label>Server Password</label><input type="text" id="cfg-pass"></div>
-                <div class="form-group full"><label>Bot Username</label><input type="text" id="cfg-user"></div>
+                <div class="form-group full"><label>Gateway Name</label><input type="text" id="cfg-user"></div>
             </div>
+
+            <div class="cfg-section">📶 WiFi Connection</div>
+            <div class="form-grid">
+                <div class="form-group"><label>WiFi Name (SSID)</label><input type="text" id="cfg-wifi-ssid" placeholder="ระบุชื่อเครือข่าย WiFi"></div>
+                <div class="form-group"><label>WiFi Password</label><input type="password" id="cfg-wifi-pass" placeholder="ระบุรหัสผ่าน WiFi"></div>
+            </div>
+            <div style="text-align: right; margin-top: 5px; margin-bottom: 20px;">
+                <button class="btn-action" style="border-color: #3b82f6; color: #3b82f6;" onclick="connectWiFi()">🔄 Change WiFi</button>
+            </div>
+
             <div class="cfg-section">📻 Rooms & Passwords</div>
             <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
                 <div class="form-group"><label>Room 1 Name</label><input type="text" id="cfg-rm1"></div>
@@ -555,6 +579,7 @@ HTML_TEMPLATE = """
                 <div class="form-group"><label>Room 6 Name</label><input type="text" id="cfg-rm6"></div>
                 <div class="form-group"><label>Room 6 Pass</label><input type="text" id="cfg-rm6-p"></div>
             </div>
+            
             <div class="cfg-section">🎧 Radio Tuning</div>
             <div class="form-grid">
                 <div class="form-group full"><label>VOX Threshold (แนะนำ: 1000)</label><input type="number" id="cfg-vox-th" step="50"></div>
@@ -562,11 +587,11 @@ HTML_TEMPLATE = """
                 <div class="form-group"><label>TX Hang Time (แนะนำ: 0.7)</label><input type="number" id="cfg-tx-hang" step="0.1"></div>
             </div>
         </div>
+        
         <div class="modal-footer">
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
                 <button class="btn-action btn-restart" onclick="restartGateway()">🔄 Restart</button>
                 <button class="btn-action btn-shutdown" onclick="shutdownGateway()">🛑 Shutdown</button>
-                <!-- 🔴 ปุ่ม Reset to Default -->
                 <button class="btn-action btn-reset" onclick="resetGateway()">⚠️ Reset</button>
             </div>
             <div class="modal-footer-right">
@@ -599,7 +624,7 @@ HTML_TEMPLATE = """
         }
 
         async function restartGateway() {
-            if(confirm("🚨 ยืนยันการรีสตาร์ท Gateway?")) {
+            if(confirm("🚨 ยืนยันการรีสตาร์ท Service Gateway?\\n(การกดปุ่มนี้เป็นการเริ่มโปรแกรมใหม่เท่านั้น ไม่ใช่การรีบูต OS)")) {
                 closeConfig();
                 document.getElementById('status-badge').innerText = "RESTARTING...";
                 document.getElementById('status-badge').className = "status-badge bg-tx";
@@ -617,14 +642,35 @@ HTML_TEMPLATE = """
             }
         }
 
-        // 🔴 ฟังก์ชัน Reset ค่าเป็นค่าโรงงาน
         async function resetGateway() {
-            if(confirm("⚠️ คำเตือน: คุณต้องการรีเซ็ตการตั้งค่าทั้งหมดกลับเป็น 'ค่าเริ่มต้นจากโรงงาน' ใช่หรือไม่?\\n\\n(กด OK หรือ ตกลง เพื่อยืนยัน / Cancel หรือ ยกเลิก เพื่อยกเลิก)")) {
+            if(confirm("⚠️ คำเตือน: คุณต้องการรีเซ็ตการตั้งค่าทั้งหมดกลับเป็น 'ค่าเริ่มต้นจากโรงงาน' ใช่หรือไม่?\\n\\n(กด OK เพื่อยืนยัน / Cancel เพื่อยกเลิก)")) {
                 closeConfig();
                 document.getElementById('status-badge').innerText = "RESETTING...";
                 document.getElementById('status-badge').className = "status-badge bg-tx";
                 fetch('/api/reset_config', { method: 'POST' });
                 setTimeout(() => location.reload(), 12000);
+            }
+        }
+        
+        async function connectWiFi() {
+            const ssid = document.getElementById('cfg-wifi-ssid').value.trim();
+            const pass = document.getElementById('cfg-wifi-pass').value;
+            
+            if(!ssid) {
+                alert("กรุณาระบุชื่อ WiFi (SSID) ที่ต้องการเชื่อมต่อ");
+                return;
+            }
+            
+            if(confirm(`🚨 ยืนยันการเปลี่ยน WiFi เป็น "${ssid}" ใช่หรือไม่?\\n\\nเมื่อกด OK บอร์ดจะทำการรีบูตตัวเอง 1 ครั้งเพื่อเชื่อมต่อเครือข่ายใหม่\\n(หาก IP เปลี่ยน คุณจะต้องหา IP ใหม่เองจากหน้าจอ LCD หรือใช้สาย LAN)`)) {
+                closeConfig();
+                document.getElementById('status-badge').innerText = "REBOOTING SYSTEM...";
+                document.getElementById('status-badge').className = "status-badge bg-warn";
+                
+                fetch('/api/wifi', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ssid: ssid, password: pass })
+                });
             }
         }
 
@@ -633,6 +679,10 @@ HTML_TEMPLATE = """
                 const res = await fetch('/api/get_config'); const cfg = await res.json();
                 document.getElementById('cfg-ip').value = cfg.SERVER_IP || ""; document.getElementById('cfg-port').value = cfg.PORT || 64738;
                 document.getElementById('cfg-pass').value = cfg.PASSWORD || ""; document.getElementById('cfg-user').value = cfg.USERNAME || "";
+                
+                document.getElementById('cfg-wifi-ssid').value = "";
+                document.getElementById('cfg-wifi-pass').value = "";
+                
                 for(let i=1; i<=6; i++) {
                     document.getElementById(`cfg-rm${i}`).value = cfg[`ROOM_${i}`] || "";
                     document.getElementById(`cfg-rm${i}-p`).value = cfg[`ROOM_${i}_PASS`] || "";
@@ -686,27 +736,39 @@ def api_change_room():
 
 @app.route('/api/restart', methods=['POST'])
 def api_restart():
-    subprocess.Popen("sleep 1 && sudo systemctl restart mumble-gateway.service", shell=True)
+    subprocess.Popen("sleep 1 ; sudo systemctl restart mumble-gateway.service", shell=True)
     return jsonify({"status": "restarting"})
 
 @app.route('/api/shutdown', methods=['POST'])
 def api_shutdown():
-    subprocess.Popen("sleep 2 && sudo poweroff", shell=True)
+    subprocess.Popen("sleep 2 ; sudo poweroff", shell=True)
     return jsonify({"status": "shutting_down"})
 
-# 🔴 เพิ่ม Endpoint ฝั่ง Python สำหรับรับคำสั่ง Reset
 @app.route('/api/reset_config', methods=['POST'])
 def api_reset_config():
     try:
-        # เขียนค่า Default ทับไฟล์คอนฟิกเดิม
         with open(CONFIG_FILE, 'w') as f:
             json.dump(DEFAULT_CONFIG, f, indent=4)
-        
-        # หน่วงเวลา 1 วิ แล้ว Restart เพื่อให้ระบบโหลดค่าตั้งต้นขึ้นมาทำงานใหม่
-        subprocess.Popen("sleep 1 && sudo systemctl restart mumble-gateway.service", shell=True)
+        subprocess.Popen("sleep 1 ; sudo systemctl restart mumble-gateway.service", shell=True)
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/wifi', methods=['POST'])
+def api_wifi():
+    data = request.json
+    ssid = data.get('ssid', '').strip()
+    password = data.get('password', '').strip()
+    
+    if ssid:
+        try:
+            cmd = f'sudo raspi-config nonint do_wifi_country TH ; sudo raspi-config nonint do_wifi_ssid_passphrase "{ssid}" "{password}" ; sleep 2 ; sudo reboot'
+            subprocess.Popen(cmd, shell=True)
+            return jsonify({"status": "success"})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+            
+    return jsonify({"status": "error", "message": "SSID is required"}), 400
 
 @app.route('/api/get_config', methods=['GET'])
 def api_get_config():
@@ -718,7 +780,7 @@ def api_save_config():
     try:
         with open(CONFIG_FILE, 'w') as f:
             json.dump(new_cfg, f, indent=4)
-        subprocess.Popen("sleep 1 && sudo systemctl restart mumble-gateway.service", shell=True)
+        subprocess.Popen("sleep 1 ; sudo systemctl restart mumble-gateway.service", shell=True)
         return jsonify({"status": "success"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
